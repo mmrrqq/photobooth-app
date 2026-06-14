@@ -33,7 +33,7 @@ def main():
 
     printer = ZebraPrinter()
     printer.set_compensation_mode(True, False, True)
-    printer.set_print_speed(50)
+    printer.set_print_speed(90)
     printer.set_burn_time(570)
     printer.set_secondary_burn_time(120)
     printer.write_image_rows(pre_label_data, row_size=int(target_width / 8), height=pre_label_height)
