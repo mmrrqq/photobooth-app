@@ -118,7 +118,7 @@ class AcquisitionService(BaseService):
 
         return backend.wait_for_lores_image(index_subdevice=index_subdevice)
 
-    def wait_for_still_file(self, index_device: int | None = 0, index_subdevice: int = 0):
+    def wait_for_still_file(self, index_device: int | None = None, index_subdevice: int = 0):
         backend = self._stills_backend if index_device is None else self._backends[index_device]
 
         pluggy_pm.hook.acq_before_shot()
