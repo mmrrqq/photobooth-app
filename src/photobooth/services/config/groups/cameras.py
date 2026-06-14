@@ -186,6 +186,11 @@ class GroupCameraGphoto2(BaseModelCamera):
         ],
     )
 
+    enable_preview: bool = Field(
+        default=False,
+        description="Enable preview stream at all.",
+    )
+
 
 if sys.platform == "darwin":
     BackendPyavInputFormat = Literal["auto", "yuyv422", "uyvy422", "nv12"]

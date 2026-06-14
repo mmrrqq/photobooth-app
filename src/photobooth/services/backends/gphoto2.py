@@ -252,7 +252,7 @@ class Gphoto2Backend(AbstractBackend):
                 else:
                     logger.warning(f"this backend does not support {type(req)} requests")
                     continue
-            else:
+            elif self._config.enable_preview:
                 # lores/preview stream
 
                 self._mode_machine.process_switchmode()
