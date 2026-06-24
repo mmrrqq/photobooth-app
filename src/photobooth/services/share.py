@@ -98,9 +98,12 @@ class ShareService(BaseService):
         media_type = mediaitem.media_type
         action_config_name = action_config.name
         printer_name = action_config.processing.printer_name
-        face_names = ",".join(self._facerecognition_service.identify_faces(mediaitem.processed))
+        recognized = self._facerecognition_service.identify_faces(mediaitem.processed)
+        face_names = ",".join(r.name for r in recognized)
+        face_emotions = ",".join(r.emotion for r in recognized)
+        face_emotion_scores = ",".join(f"{r.emotion_score:.2f}" for r in recognized)
 
-        logger.debug(f"detected faces: {face_names}")
+        logger.debug(f"detected faces: {face_names}, emotions: {face_emotions}")
 
         # once unblocked, also check printer availability if configured:
         if action_config.processing.check_if_printer_is_idle:
@@ -137,6 +140,8 @@ class ShareService(BaseService):
                 action_config_name=action_config_name,
                 printer_name=action_config.processing.printer_name,
                 face_names=face_names,
+                face_emotions=face_emotions,
+                face_emotion_scores=face_emotion_scores,
                 **share_parameters,
             )
         except KeyError as exc:

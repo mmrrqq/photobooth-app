@@ -64,8 +64,14 @@ dependencies = [
   "requests",
   "pywin32; platform_system == 'Windows'",
   "insightface>=1.0.1",
-  "onnxruntime-gpu>=1.26.0",
+  "onnxruntime>=1.26.0",
 ]
+
+[project.optional-dependencies]
+# Opt-in GPU acceleration. Requires a CUDA-capable GPU supported by the onnxruntime-gpu
+# build (currently CUDA 13, i.e. Turing/CC 7.5+) plus a matching cuDNN. On unsupported
+# hardware the CUDA provider fails to load and onnxruntime falls back to CPU.
+gpu = ["onnxruntime-gpu>=1.26.0"]
 
 [project.scripts]
 photobooth = "photobooth.__main__:main"
