@@ -17,11 +17,11 @@ class BaseModelCamera(BaseModel):
         description="Choose the orientation of the camera. 0° is default orientation and applies no adjustment. The orientation will be set in the EXIF data so transformations are applied lossless.",
     )
 
-    pause_camera_on_livestream_inactive: bool = Field(
+    camera_standby_when_inactive: bool = Field(
         default=False,
         description="When enabled, the app tries to disable the cameras livestream when no livestream is requested. It helps to avoid sensor overheating for older cameras by setting viewfinder=0.",
     )
-    timeout_until_inactive: int = Field(
+    camera_standby_when_inactive_time: int = Field(
         default=30,
         ge=10,
         le=300,
@@ -133,6 +133,29 @@ class GroupCameraPicamera2(BaseModelCamera):
     )
 
 
+class Gphoto2Parameters(BaseModel):
+    """Configure different settings when switching between modes."""
+
+    model_config = ConfigDict(title="Gphoto2 Parameters")
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable to write this setting to the camera when the mode switches.",
+    )
+    name: str = Field(
+        default="",
+        description="The name of the config element. Typical names are 'shutterspeed', 'iso', and manufacturer specific settings like 'eosmoviemode', 'viewfinder'.",
+    )
+    value: str = Field(
+        default="",
+        description="The value to set the camera to.",
+    )
+    note: str = Field(
+        default="",
+        description="A field just for you to keep track why you chose a setting.",
+    )
+
+
 class GroupCameraGphoto2(BaseModelCamera):
     model_config = ConfigDict(title="Gphoto2")
     backend_type: Literal["Gphoto2"] = "Gphoto2"
@@ -141,32 +164,33 @@ class GroupCameraGphoto2(BaseModelCamera):
         default="",
         description="Set capture target (examples: 'Internal RAM', 'Memory card'). To keep images, capture to a disk target. Empty means default of camera (mostly RAM).",
     )
-    disable_viewfinder_before_capture: bool = Field(
-        default=True,
-        description="Disable viewfinder before capture might speed up following capture autofocus. Might not work with every camera.",
+
+    parameterset_standby: list[Gphoto2Parameters] = Field(
+        default=[
+            Gphoto2Parameters(name="viewfinder", value="0"),
+            Gphoto2Parameters(name="eosmoviemode", value="0"),
+        ],
     )
 
-    iso_liveview: str = Field(
-        default="",
-        description="Sets the ISO for when the photobooth is in live preview modus. Very useful, when Camera does not support Exposure Simulation, and an external Flash is used. Only works when the camera is in manual. (Example Values: Auto, 100, 200, ...)",
-    )
-    iso_capture: str = Field(
-        default="",
-        description="Sets the ISO for when the photobooth captures a photo. Very useful, when Camera does not support Exposure Simulation, and an external Flash is used. Only works when the camera is in manual. (Example Values: Auto, 100, 200, ...)",
-    )
-    shutter_speed_liveview: str = Field(
-        default="",
-        description="Sets the shutter speed for the camera during the photobooth's live preview mode. Very useful, when Camera does not support Exposure Simulation, and an external Flash is used. This setting is effective only when the camera is in manual mode. (Example Values: 1, 1/5, 1/20, 1/30, 1/60, 1/1000, 1/4000, ...) Choose a very high default shutter speed in combination with Auto iso to emulate auto exposure. ",
-    )
-    shutter_speed_capture: str = Field(
-        default="",
-        description="Configures the shutter speed for the camera at the time of capturing a photo in the photobooth. Very useful, when Camera does not support Exposure Simulation, and an external Flash is used. Operational only in manual mode. (Example Values: 1/60, 1/320, 1/1000, 1/2000, 1/4000, ...)",
+    parameterset_video: list[Gphoto2Parameters] = Field(
+        default=[
+            Gphoto2Parameters(name="iso", value="Auto"),
+            Gphoto2Parameters(name="eosmoviemode", value="1"),
+        ],
     )
 
-    canon_eosmoviemode: bool = Field(
-        default=False,
-        description="Canon specific. Switch on/off eosmoviemode when streaming videos. Might not work with every camera.",
+    parameterset_still: list[Gphoto2Parameters] = Field(
+        default=[
+            Gphoto2Parameters(name="viewfinder", value="0", note="allows camera to autofocus fast in native mode not contrast mode"),
+            Gphoto2Parameters(name="eosmoviemode", value="0"),
+        ],
     )
+
+
+if sys.platform == "darwin":
+    BackendPyavInputFormat = Literal["auto", "yuyv422", "uyvy422", "nv12"]
+else:
+    BackendPyavInputFormat = Literal["auto", "mjpeg", "yuyv422", "uyvy422", "nv12"]
 
 
 class GroupCameraPyav(BaseModelCamera):
@@ -177,6 +201,12 @@ class GroupCameraPyav(BaseModelCamera):
         default="Insta360 Link 2C",
         description="Device name (Windows) or index (Linux, Mac) of the webcam.",
         json_schema_extra={"list_api": "/api/admin/enumerate/usbcameras"},
+    )
+
+    pixel_format: BackendPyavInputFormat = Field(
+        default="auto",
+        description="mjpeg is preferred usually. Some cameras (especially virtual cameras) or systems (Mac) do not support MJPG, so you can fall back to uncompressed rawvideo types here.",
+        json_schema_extra={"computeIntense": True},
     )
 
     cam_resolution_width: int = Field(

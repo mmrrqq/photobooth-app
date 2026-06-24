@@ -10,9 +10,11 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import av
+import av.error
 from av.codec import Capabilities, Codec
 from av.codec.codec import UnknownCodecError
-from av.video.reformatter import Interpolation, VideoReformatter
+from av.container import InputContainer
+from av.video.reformatter import ColorRange, Interpolation, VideoReformatter
 from simplejpeg import encode_jpeg_yuv_planes
 
 from ...utils.helper import filename_str_time
@@ -38,7 +40,11 @@ elif sys.platform == "linux":
 class WebcamPyavBackend(AbstractBackend):
     def __init__(self, config: GroupCameraPyav):
         self._config: GroupCameraPyav = config
-        super().__init__(orientation=config.orientation, num_subdevices=1)
+        super().__init__(
+            orientation=config.orientation,
+            num_subdevices=1,
+            idle_timeout=self._config.camera_standby_when_inactive_time if self._config.camera_standby_when_inactive else None,
+        )
 
         # for debugging purposes output some information about underlying libs
         self._version_codec_info()
@@ -73,12 +79,83 @@ class WebcamPyavBackend(AbstractBackend):
     def teardown_resource(self):
         pass
 
+    def frame_generator(self, input_device: InputContainer, input_stream: av.VideoStream):
+        consecutive_errors = 0
+
+        demuxer = input_device.demux(input_stream)
+
+        while not self._stop_event.is_set():
+            try:
+                packet = next(demuxer)
+                consecutive_errors = 0
+
+                yield packet
+
+            except StopIteration as exc:  # EOFError in FFmpeg is raised by demux() as StopIteration (break while -> stop yield)
+                if sys.platform == "darwin":
+                    # macOS seems it exhausts the iterator mid-stream.
+                    # Do not break directly but retry several times.
+
+                    consecutive_errors += 1
+
+                    if consecutive_errors > 200:
+                        # Genuine hardware loss: The device/demuxer is considered as finally dead
+                        raise RuntimeError("Stream stalled. Too many consecutive StopIteration errors.") from exc
+
+                    time.sleep(0.01)
+                    demuxer = input_device.demux(input_stream)  # try to recreate iterator without reopening device
+
+                    continue
+                else:
+                    # On Linux/Windows, if the demuxer exhausted,
+                    # outer loop in run_service will try to reopen the camera if the service should still run
+                    break
+
+            except av.error.BlockingIOError as exc:
+                # Catching specific PyAV exception mapping to EAGAIN on Mac
+
+                consecutive_errors += 1
+
+                if consecutive_errors > 200:
+                    raise RuntimeError(f"Stream stalled. Too many consecutive blocking errors: {exc}") from exc
+
+                time.sleep(0.01)
+
+                continue
+
+            except Exception as exc:
+                raise PermanentFault("Error decoding camera frame! Check the camera settings (device name, fps, resolution, ...)") from exc
+
+    def decode_frame(self, packet: av.Packet):
+        # for the rawvideo types and the mjpeg type, the camera packets consist of always 1 frame.
+        # the packet is the jpeg data to be received using bytes(packet) or the raw yuv data.
+        # in case we use mjpeg, we use the jpeg directly if possible. if we have rawvideo, we get the frame decoded
+        # using packet.decode() and process the frame pixel data
+
+        try:
+            return packet.decode()[0]
+
+        except Exception as exc:
+            del packet
+            raise PermanentFault("Error decoding camera frame! Ensure the settings are correct (device name, fps, resolution, ...)") from exc
+
     def run_service(self):
         reformatter = VideoReformatter()
         options = {
             "video_size": f"{self._config.cam_resolution_width}x{self._config.cam_resolution_height}",
-            "input_format": "mjpeg",  # or h264 if supported is also possible but seems it has no effect (tested on windows dshow only)
         }
+
+        if sys.platform == "darwin":
+            if self._config.pixel_format != "auto":  # if auto, set nothing let's avfoundation choose
+                options["pixel_format"] = self._config.pixel_format
+            options["probesize"] = "10000000"
+            options["analyzeduration"] = "2000000"
+        else:
+            if self._config.pixel_format == "auto":
+                options["input_format"] = "mjpeg"
+            else:
+                options["input_format"] = self._config.pixel_format
+
         if self._config.cam_framerate > 0:
             # avfoundation has ntsc as default. webcams refuse to work with that framerate, so allow to set it explicit
             # dshow/v4l usually dont need this configured because their default seems reasonable.
@@ -95,7 +172,7 @@ class WebcamPyavBackend(AbstractBackend):
                 continue
 
             try:
-                logger.info(f"trying to open camera index={self._config.device_identifier=}")
+                logger.info(f"trying to open camera '{self._config.device_identifier}'")
                 input_device = av.open(self._device_name_platform(), format=input_ffmpeg_device, options=options)
             except Exception as exc:
                 logger.critical(f"cannot open camera, error {exc}. Likely the parameter set are not supported by the camera or camera name wrong.")
@@ -103,28 +180,17 @@ class WebcamPyavBackend(AbstractBackend):
 
             with input_device:
                 input_stream = input_device.streams.video[0]
-                # shall speed up processing, ... lets keep an eye on this one...
-                input_stream.thread_type = "AUTO"
-                input_stream.thread_count = 0
+                input_stream.thread_type = "AUTO"  # speed up processing
+                input_stream.thread_count = 0  # speed up processing
+                codec_name = input_stream.codec.name
 
                 # 1 loop to spit out packet and frame information
                 logger.info(f"input_device: {input_device}")
-                logger.info(f"input_stream: {input_stream}")
-                logger.info(f"input_stream codec: {input_stream.codec}")
-                logger.info(f"input_stream pix_fmt: {input_stream.pix_fmt}")
-                logger.info(f"pyav packet received: {next(input_device.demux())}")
+                logger.info(f"input_stream: {input_stream} (configured pixel_format: {self._config.pixel_format})")
+                logger.info(f"color_range: {ColorRange(input_stream.color_range).name} (Range JPEG=full, MPEG=limited)")
                 logger.info(f"livestream resolution: {rW}x{rH}")
 
-                try:
-                    frame = next(input_device.decode(input_stream))
-                    logger.info(f"pyav frame received: {frame}")
-                    logger.info(f"frame format: {frame.format}")
-                except Exception as exc:
-                    raise PermanentFault("Error decoding camera frame! Ensure the settings are correct (device name, fps, resolution, ...)") from exc
-
-                codec_name = input_stream.codec.name
-
-                for frame in input_device.decode(input_stream):
+                for packet in self.frame_generator(input_device, input_stream):
                     with self._hires_lock:
                         req = self._hires_queue.popleft() if self._hires_queue else None
 
@@ -132,27 +198,38 @@ class WebcamPyavBackend(AbstractBackend):
                     if req:
                         if isinstance(req, StillRequest):
                             if codec_name == "mjpeg":
-                                jpeg_bytes_hires = bytes(next(input_device.demux()))
+                                jpeg_bytes_hires = bytes(packet)
                             elif codec_name == "rawvideo":
+                                frame = self.decode_frame(packet)
                                 image_bytesio = io.BytesIO()
                                 frame.to_image().save(image_bytesio, format="JPEG", quality=90)
                                 jpeg_bytes_hires = image_bytesio.getvalue()
+                                del frame
                             else:
                                 raise PermanentFault(f"The webcam's codec {codec_name} is not supported!")
 
                             # only capture one pic and return to lores streaming afterwards
-                            with NamedTemporaryFile(mode="wb", delete=False, dir="tmp", prefix=f"{filename_str_time()}_pyav_", suffix=".jpg") as f:
+                            with NamedTemporaryFile(
+                                mode="wb",
+                                delete=False,
+                                dir="tmp",
+                                prefix=f"{filename_str_time()}_pyav_",
+                                suffix=".jpg",
+                            ) as f:
                                 f.write(jpeg_bytes_hires)
 
                             with req.condition:
                                 req.result_file = Path(f.name)
                                 req.condition.notify_all()
+
+                            continue
                         else:
                             logger.warning(f"this backend does not support {type(req)} requests")
                             continue
 
                     # abort streaming on shutdown so process can join and close
                     if self._stop_event.is_set():
+                        del packet  # del packet to allow buffer release in c ffmpeg python
                         break
 
                     self._mode_machine.process_switchmode()
@@ -160,20 +237,31 @@ class WebcamPyavBackend(AbstractBackend):
                     if self._mode_machine.active_mode == "standby":
                         # no need to sleep here, because while loop is called on every frame only. otherwise pyav internal buffer runs full
                         # and floods logging
+                        del packet  # del packet to allow buffer release in c ffmpeg python
                         break
 
                     if not self._framerate.should_process_frame(15):
                         continue
 
+                    frame = self.decode_frame(packet)
+
                     if self._config.preview_resolution_reduce_factor > 1:
                         out_frame = reformatter.reformat(
-                            frame, width=rW, height=rH, interpolation=Interpolation.BILINEAR, format="yuvj420p"
+                            frame,
+                            width=rW,
+                            height=rH,
+                            interpolation=Interpolation.BILINEAR,
+                            format="yuv420p",
+                            src_color_range=input_stream.color_range,
+                            dst_color_range=ColorRange.JPEG,  # simplejpeg is full range
                         ).to_ndarray()
                     else:
-                        if frame.format.name != "yuvj420p":
-                            out_frame = reformatter.reformat(frame, format="yuvj420p").to_ndarray()
-                        else:
-                            out_frame = frame.to_ndarray()
+                        out_frame = reformatter.reformat(
+                            frame,
+                            format="yuv420p",
+                            src_color_range=input_stream.color_range,
+                            dst_color_range=ColorRange.JPEG,  # simplejpeg is full range
+                        ).to_ndarray()
 
                     # compress raw YUV420p to JPEG
                     jpeg_bytes = encode_jpeg_yuv_planes(
@@ -183,8 +271,7 @@ class WebcamPyavBackend(AbstractBackend):
                         quality=85,
                         fastdct=True,
                     )
-                    # Alternative approach using turbojpeg. speed is actually the same but simplejpeg comes with turbojpeg libs bundled for windows
-                    # jpeg_bytes = turbojpeg.encode_from_yuv(out_frame, rH, rW, quality=85, flags=TJFLAG_FASTDCT)
+                    del out_frame, frame
 
                     with self._lores_data[0].condition:
                         self._lores_data[0].data = jpeg_bytes

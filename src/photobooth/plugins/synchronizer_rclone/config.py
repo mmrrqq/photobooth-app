@@ -118,6 +118,10 @@ class RemoteConfig(BaseModel):
         default="",
         description="Subdir that is used as base to sync to. In this directory the sharepage (subdir/index.html) and mediafiles (subdir/media/) will be placed. WARNING: This directory is owned by the app - it will delete unknown files!",
     )
+    copy_only_mode: bool = Field(
+        default=False,
+        description="Only copy files to this remote instead of full synchronization. Files are not deleted on the remote, you need to do the housekeeping on your own.",
+    )
 
     enable_immediate_sync: bool = Field(
         default=True,

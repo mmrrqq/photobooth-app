@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from photobooth.utils.stoppablethread import StoppableThread
+
 from ...utils.resilientservice import ResilientService
 from ..config.groups.cameras import Orientation
 from .utils.rotate_exif import set_exif_orientation
@@ -128,7 +130,7 @@ class ModeController:
     - automatischem Standby nach Idle
     """
 
-    def __init__(self, backend: "AbstractBackend", idle_timeout: float = 5.0):
+    def __init__(self, backend: "AbstractBackend", idle_timeout: float | None = None):
         self.backend = backend
         self.idle_timeout = idle_timeout
 
@@ -136,8 +138,19 @@ class ModeController:
         self.requested_mode: Modes = "standby"
         self.active_mode: Modes | None = None
         self._last_live_request: float | None = time.monotonic()
+        self._monitor_thread: StoppableThread | None = None
 
-        threading.Thread(target=self._idle_monitor, daemon=True).start()
+    def start(self):
+        if self.idle_timeout:
+            assert self.idle_timeout > 5, "The idle timeout to set the camera to standby needs to be disabled or at least 5s."
+
+            self._monitor_thread = StoppableThread(target=self._idle_monitor, daemon=True)
+            self._monitor_thread.start()
+
+    def stop(self):
+        if self._monitor_thread:
+            self._monitor_thread.stop()
+            self._monitor_thread.join()
 
     # ---------------------------------------------------------
     # Öffentliche API (kann aus jedem Thread aufgerufen werden)
@@ -171,9 +184,12 @@ class ModeController:
 
     def _idle_monitor(self):
         """Monitor thread function to request standby if no livestream is requested for idle_timeout seconds"""
+        assert self.idle_timeout
+        assert self._monitor_thread
+
         logger.info(f"pausing livestream on backend {self.backend} after {self.idle_timeout}s is enabled.")
 
-        while True:
+        while not self._monitor_thread.stopped():
             time.sleep(1)
 
             if self._last_live_request is None:
@@ -194,7 +210,10 @@ class ModeController:
         """Wird im stream-thread aufgerufen, wenn es passend für einen potentiellen mode-switch ist"""
 
         with self._lock:
-            req = self.requested_mode if not immediate_forced_mode else immediate_forced_mode
+            if immediate_forced_mode:
+                self.requested_mode = immediate_forced_mode
+
+            req = self.requested_mode
             act = self.active_mode
 
         # Kein Modewechsel nötig
@@ -230,15 +249,16 @@ class AbstractBackend(ResilientService, ABC):
         """called externally via events and used to change to a capture mode if necessary"""
 
     @abstractmethod
-    def __init__(self, orientation: Orientation, num_subdevices: int):
+    def __init__(self, orientation: Orientation, num_subdevices: int, idle_timeout: float | None):
         # init
         self._orientation: Orientation = orientation
         self._num_subdevices = num_subdevices
+        self._idle_timeout = idle_timeout
 
         # statisitics attributes
         self._framerate: Framerate = Framerate()
 
-        self._mode_machine = ModeController(self, idle_timeout=5)
+        self._mode_machine = ModeController(self, idle_timeout=self._idle_timeout)
 
         # lores broadcast and ...
         self._lores_data = [LoresBroadcastRes(data=b"", condition=threading.Condition()) for _ in range(self._num_subdevices)]
@@ -255,13 +275,16 @@ class AbstractBackend(ResilientService, ABC):
         return f"{self.__class__.__name__}"
 
     def get_stats(self) -> BackendStats:
-        stats = BackendStats(
+        base = BackendStats(
             backend_name=self.__class__.__name__,
-            mode=self._mode_machine.active_mode if self._mode_machine.active_mode else "unknown",
+            mode=self._mode_machine.active_mode or "unknown",
             device_fps=self._framerate.fps,
         )
 
-        return stats
+        return self._extend_stats(base)
+
+    def _extend_stats(self, base: BackendStats) -> BackendStats:
+        return base  # default: no extension, otherwise override in the backend
 
     def _frame_tick(self):
         """call by backends implementation when frame is delivered, so the fps can be calculated..."""
@@ -270,13 +293,13 @@ class AbstractBackend(ResilientService, ABC):
     @abstractmethod
     def start(self):
         """To start the backend to serve"""
-
+        self._mode_machine.start()
         super().start()
 
     @abstractmethod
     def stop(self):
         """To stop the backend to serve"""
-
+        self._mode_machine.stop()
         super().stop()
 
     def wait_for_multicam_files(self) -> list[Path]:
