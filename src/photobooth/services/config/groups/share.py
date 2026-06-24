@@ -46,7 +46,7 @@ class ShareProcessing(BaseModel):
 
     share_command: str = Field(
         default="echo {filename}",
-        description="Command issued to share/print. Use {filename} as placeholder for the mediaitem to be shared/printed. Also available: {printer_name}=given printer name below, {media_type}=[image,collage,video,animation], {action_config_name} which is the action name defined in the config, and {face_names}=comma-separated recognized person names (empty string if none recognized or face recognition is disabled).",
+        description="Command issued to share/print. Use {filename} as placeholder for the mediaitem to be shared/printed. Also available: {printer_name}=given printer name below, {media_type}=[image,collage,video,animation], {action_config_name} which is the action name defined in the config, {face_names}=comma-separated recognized person names (empty string if none recognized or face recognition is disabled), {face_emotions}=comma-separated emotions and {face_emotion_scores}=comma-separated 0.00-1.00 confidence per emotion, both index-aligned with {face_names} (empty if emotion prediction is disabled).",
     )
     printer_name: str = Field(
         default="PDF",
