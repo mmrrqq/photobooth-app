@@ -14,6 +14,7 @@ from .baseconfig import BaseConfig
 from .groups.actions import GroupActions
 from .groups.cameras import GroupCameras
 from .groups.common import GroupCommon
+from .groups.facerecognition import GroupFaceRecognition
 from .groups.hardwareinputoutput import GroupHardwareInputOutput
 from .groups.mediaprocessing import GroupMediaprocessing
 from .groups.misc import GroupMisc
@@ -50,3 +51,4 @@ class AppConfig(BaseConfig):
     backends: GroupCameras = GroupCameras()
     hardwareinputoutput: GroupHardwareInputOutput = GroupHardwareInputOutput()
     misc: GroupMisc = GroupMisc()
+    facerecognition: GroupFaceRecognition = GroupFaceRecognition()

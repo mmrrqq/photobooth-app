@@ -13,6 +13,7 @@ from ..database.types import MediaitemTypes
 from ..utils.exceptions import WrongMediaTypeError
 from ..utils.printer import PrinterStatus, get_printer_status
 from .base import BaseService
+from .facerecognition import FaceRecognitionService
 from .sse import sse_service
 from .sse.sse_ import SseEventTranslateableFrontendNotification
 
@@ -21,8 +22,9 @@ TIMEOUT_PROCESS_RUN = 6  # command to print needs to complete within 6 seconds.
 
 
 class ShareService(BaseService):
-    def __init__(self):
+    def __init__(self, facerecognition_service: FaceRecognitionService) -> None:
         super().__init__()
+        self._facerecognition_service = facerecognition_service
 
     def start(self):
         super().start()
@@ -96,6 +98,9 @@ class ShareService(BaseService):
         media_type = mediaitem.media_type
         action_config_name = action_config.name
         printer_name = action_config.processing.printer_name
+        face_names = ",".join(self._facerecognition_service.identify_faces(mediaitem.processed))
+
+        logger.debug(f"detected faces: {face_names}")
 
         # once unblocked, also check printer availability if configured:
         if action_config.processing.check_if_printer_is_idle:
@@ -131,6 +136,7 @@ class ShareService(BaseService):
                 media_type=media_type.value,
                 action_config_name=action_config_name,
                 printer_name=action_config.processing.printer_name,
+                face_names=face_names,
                 **share_parameters,
             )
         except KeyError as exc:
