@@ -5,6 +5,7 @@ from .services.acquisition import AcquisitionService
 from .services.base import BaseService
 from .services.collection import MediacollectionService
 from .services.configuration import ConfigurationService
+from .services.facerecognition import FaceRecognitionService
 from .services.gpio import GpioService
 from .services.information import InformationService
 from .services.logging import LoggingService
@@ -26,7 +27,8 @@ class Container:
     information_service = InformationService(acquisition_service)
     processing_service = ProcessingService(acquisition_service, mediacollection_service, information_service)
     system_service = SystemService()
-    share_service = ShareService()
+    facerecognition_service = FaceRecognitionService()
+    share_service = ShareService(facerecognition_service)
     gpio_service = GpioService(processing_service, share_service, mediacollection_service)
     config_service = ConfigurationService(pluginmanager_service)
 
