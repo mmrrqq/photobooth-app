@@ -10,7 +10,7 @@ from .zebra_printer import ZebraPrinter
 DPI = 203
 TO_INCH = 1 / 25.4
 LABEL_WIDTH = 80  # mm
-FONT_PATH = Path(__file__).parent.parent.parent.parent / "userdata" / "nerdfontmono-reg.ttf"
+FONT_PATH = Path(__file__).parent.parent.parent.parent / "userdata" / "demoassets" / "nerdfontmono-reg.ttf"
 PRE_LABEL_PATH = Path(__file__).parent / "receipt_template.png"
 DATE_FORMAT = "%d.%m.%Y"  # printed as pre_label if no template image is found at PRE_LABEL_PATH
 NAMES_HEADER = "Rechnung:"  # editable; matches the German template wording
