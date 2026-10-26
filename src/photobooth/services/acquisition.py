@@ -8,6 +8,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Literal
 
+import gphoto2
+
 from ..appconfig import appconfig
 from ..plugins import pm as pluggy_pm
 from ..utils.exceptions import BackendNotRunning
@@ -126,6 +128,9 @@ class AcquisitionService(BaseService):
         try:
             return backend.wait_for_still_file(index_subdevice=index_subdevice)
         except Exception as exc:
+            if isinstance(exc, gphoto2.GPhoto2Error) and exc.code == -52:
+                logger.warning("trying to recover stills backend")
+                self._stills_backend.recover()  # TODO: verify
             raise exc
         finally:
             # ensure even if failed, the wled is set to standby again

@@ -167,6 +167,13 @@ class GroupCameraGphoto2(BaseModelCamera):
             Gphoto2Parameters(name="iso", value="Auto"),
         ],
     )
+    capture_timeout: float = Field(
+        default=6.0,
+        ge=1,
+        le=20,
+        description="Maximum time in seconds to wait for the camera to deliver a captured image. If no image content arrives in time, the capture fails with an error. Keep below the overall still request timeout.",
+    )
+
     parameterset_standby: list[Gphoto2Parameters] = Field(
         default=[
             Gphoto2Parameters(name="viewfinder", value="0"),

@@ -184,6 +184,80 @@ class Gphoto2Backend(AbstractBackend):
         if self._camera:
             self._camera.exit()
 
+    def _capture_hires(self, timeout: float) -> Path:
+        """Trigger a still capture, wait up to `timeout` seconds for the camera to deliver a JPG and
+        download it to a temporary file.
+
+        Uses the non-blocking trigger_capture() instead of capture(): capture() blocks until the camera's
+        own - potentially very long - internal timeout elapses and only then raises, so it cannot be
+        aborted early. trigger_capture() returns immediately and the resulting file(s) arrive as events,
+        which lets us poll against our own deadline and raise as soon as `timeout` is exceeded."""
+        assert gp
+
+        deadline = time.monotonic() + timeout
+
+        # hold a list of captured files during capture. this is needed if JPG+RAW is shot: there is no
+        # guarantee about the order, and depending on the capturetarget the sequence the images appear can
+        # differ. so we collect everything and pick the jpg afterwards.
+        captured_files: list[tuple[str, str]] = []
+        file_to_download: tuple[str, str] | None = None
+        capture_complete = False
+
+        self._camera.trigger_capture()  # pyright: ignore [reportAttributeAccessIssue]
+
+        while file_to_download is None and not capture_complete:
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                raise TimeoutError(f"no jpeg received from camera within {timeout}s")
+
+            # wait_for_event blocks at most the given milliseconds, keeping the loop responsive to the deadline
+            evt_typ_cam, evt_data_cam = self._camera.wait_for_event(min(remaining_ms, 200))
+            evt_typ = GpEvents(evt_typ_cam)
+
+            if evt_typ is GpEvents.GP_EVENT_TIMEOUT:
+                continue  # no event in this poll window, keep waiting until the deadline
+
+            logger.debug(f"Event '{evt_typ.name}' received, event data is '{evt_data_cam}'")
+
+            if evt_typ is GpEvents.GP_EVENT_FILE_ADDED:
+                captured_files.append((evt_data_cam.folder, evt_data_cam.name))
+
+                _, file_extension = os.path.splitext(evt_data_cam.name)  # get file extension (including .)
+                if str(file_extension).lower() in (".jpg", ".jpeg"):
+                    file_to_download = (evt_data_cam.folder, evt_data_cam.name)
+            elif evt_typ is GpEvents.GP_EVENT_CAPTURE_COMPLETE:
+                capture_complete = True
+
+        logger.info(f"got {captured_files=}")
+
+        # capture finished but no jpg was among the produced files
+        if file_to_download is None:
+            raise RuntimeError("capture complete but no jpeg produced! shooting in raw-only mode or capture failed?")
+
+        logger.info(f"determined {file_to_download=}")
+
+        # best effort: drain any pending events (e.g. the RAW partner file or capture-complete) so they do
+        # not bleed into the next capture's event queue.
+        evt_typ_cam, _ = self._camera.wait_for_event(10)
+        while GpEvents(evt_typ_cam) is not GpEvents.GP_EVENT_TIMEOUT:
+            evt_typ_cam, _ = self._camera.wait_for_event(10)
+
+        # read jpg from camera to a temporary file
+        filepath = Path(
+            NamedTemporaryFile(
+                mode="wb",
+                delete=False,
+                dir="tmp",
+                prefix=f"{filename_str_time()}_gphoto2_",
+                suffix=".jpg",
+            ).name
+        )
+
+        camera_file = self._camera.file_get(file_to_download[0], file_to_download[1], gp.GP_FILE_TYPE_NORMAL)  # pyright: ignore [reportAttributeAccessIssue]
+        camera_file.save(str(filepath))
+
+        return filepath
+
     def run_service(self):
         assert gp
 
@@ -198,87 +272,21 @@ class Gphoto2Backend(AbstractBackend):
                     # capture hq picture
                     logger.info("taking hq picture")
 
-                    # hold a list of captured files during capture. this is needed if JPG+RAW is shot.
-                    # there is no guarantee that the first is the JPG and second the RAW image. Also depending on the capturetarget
-                    # the sequence the images appear can be different. gp.GP_CAPTURE_IMAGE vs gp.GP_CAPTURE_RAW seems not reliable to rely on
-                    captured_files: list[tuple[str, str]] = []
-
                     with self._mode_machine.ext_mode_switch_lock:
                         # we force the camera to still mode and do not allow to change the mode until it is completed.
                         # otherwise the app could request
                         self._mode_machine.process_switchmode("still")
 
                         try:
-                            # file_path = self._camera.capture(gp.GP_CAPTURE_IMAGE)  # pyright: ignore [reportAttributeAccessIssue]
-                            # captured_files.append((file_path.folder, file_path.name))
-                            self._camera.trigger_capture()  # pyright: ignore [reportAttributeAccessIssue]
-                        except gp.GPhoto2Error as exc:
-                            logger.critical(f"error capture! check logs for errors. {exc}")
-
-                            # try again in next loop
-                            time.sleep(0.6)  # if it fails before next round, wait little because it might fail fast again
+                            filepath = self._capture_hires(self._config.capture_timeout)
+                        except Exception as exc:
+                            # surface the error to the waiting request - wait_for_still_file re-raises req.error
+                            # instead of silently retrying and letting the request's overall timeout elapse.
+                            logger.critical(f"error capturing hq picture! check logs for errors. {exc}")
+                            with req.condition:
+                                req.error = exc
+                                req.condition.notify_all()
                             continue
-
-                    # empty the event queue, needed in case of RAW+JPG shooting usually.
-                    # used usually only if capture JPG+RAW enabled (2 files added in one capture)
-                    # if not cleared, the second capture might fail due to pending events in libgphoto2
-                    # also if raw, we might have the JPG added later in these events, not received from .capture above
-                    # https://github.com/jim-easterbrook/python-gphoto2/issues/65#issuecomment-433615025
-                    while True:
-                        evt_typ_cam, evt_data_cam = self._camera.wait_for_event(2000)
-                        evt_typ = GpEvents(evt_typ_cam)
-
-                        if evt_typ in (GpEvents.GP_EVENT_CAPTURE_COMPLETE, GpEvents.GP_EVENT_TIMEOUT):
-                            logger.debug(f"Event '{evt_typ.name}' received, capture is complete, continue to download capture.")
-                            break
-                        elif evt_typ is GpEvents.GP_EVENT_FILE_ADDED:
-                            logger.debug(f"Event '{evt_typ.name}' received', event data is '{evt_data_cam}'")
-                            captured_files.append((evt_data_cam.folder, evt_data_cam.name))
-                        else:
-                            logger.debug(f"Event '{evt_typ.name}' received', event data is '{evt_data_cam}'")
-
-                    logger.info(f"got {captured_files=}")
-
-                    # now decide which file to download, we watch out for the jpg
-                    file_to_download = None
-                    for captured_file in captured_files:
-                        _, file_extension = os.path.splitext(captured_file[1])  # get file extension (including .)
-                        if str(file_extension).lower() in (".jpg", ".jpeg"):
-                            file_to_download = captured_file
-
-                            logger.info(f"determined {file_to_download=}")
-                            break
-
-                    # check if a file was found. if no, maybe capture failed or
-                    if file_to_download is None:
-                        logger.critical("no capture or no jpeg captured! shooting in raw-only mode?")
-
-                        # try again in next loop
-                        time.sleep(0.6)  # if it fails before next round, wait little because it might fail fast again
-                        continue
-
-                    # read from camera
-                    try:
-                        # only capture one pic and return to lores streaming afterwards
-                        filepath = Path(
-                            NamedTemporaryFile(
-                                mode="wb",
-                                delete=False,
-                                dir="tmp",
-                                prefix=f"{filename_str_time()}_gphoto2_",
-                                suffix=".jpg",
-                            ).name
-                        )
-
-                        camera_file = self._camera.file_get(file_to_download[0], file_to_download[1], gp.GP_FILE_TYPE_NORMAL)  # pyright: ignore [reportAttributeAccessIssue]
-                        camera_file.save(str(filepath))
-
-                    except gp.GPhoto2Error as exc:
-                        logger.critical(f"error reading camera file! check logs for errors. {exc}")
-
-                        # try again in next loop
-                        time.sleep(0.6)  # if it fails before next round, wait little because it might fail fast again
-                        continue
 
                     with req.condition:
                         req.result_file = filepath
