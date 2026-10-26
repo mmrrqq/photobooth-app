@@ -1,0 +1,146 @@
+import io
+import logging
+import os
+import sys
+import time
+
+import pytest
+from PIL import Image
+
+try:
+    from photobooth.services.backends.gphoto2 import Gphoto2Backend, gp
+except (ImportError, ModuleNotFoundError):
+    pytest.skip(reason="gphoto2 not available", allow_module_level=True)
+
+from photobooth.appconfig import appconfig
+from photobooth.services.config.groups.cameras import Gphoto2Parameters, GroupCameraGphoto2
+from photobooth.utils.enumerate import dslr_gphoto2 as enumerate_dslr_gphoto2
+
+from ..util import block_until_device_is_running
+
+logger = logging.getLogger(name=None)
+
+if not sys.platform == "linux":
+    pytest.skip("platform not linux, test of backend skipped", allow_module_level=True)
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    appconfig.reset_defaults()
+
+    yield
+
+
+@pytest.fixture(scope="module")
+def backend_gphoto2():
+    # ensure virtual camera is available (starting from gphoto2 2.5.0 always true)
+    # assert has_vcam() # on selfhosted-runner currently a problem. TODO: setup new RPI runner
+
+    # its checked whether camera is available, but actually never used the index, because it's assumed
+    # only one DSLR is connected at a time.
+
+    def use_vcam():
+        logger.info(f"python-gphoto2: {gp.__version__}")
+
+        # virtual camera delivers images from following path:
+        os.environ["VCAMERADIR"] = os.path.join(os.path.dirname(__file__), "../../assets")
+        # switch to virtual camera from normal drivers
+        # IOLIBS is set on import of gphoto2:
+        # https://github.com/jim-easterbrook/python-gphoto2/blob/510149d454c9fa1bd03a43f098eea3c52d2e0675/src/swig-gp2_5_31/__init__.py#L15C32-L15C32
+        os.environ["IOLIBS"] = os.environ["IOLIBS"].replace("iolibs", "vusb")
+
+        logger.info(os.environ["VCAMERADIR"])
+        logger.info(os.environ["IOLIBS"])
+
+    def has_vcam():
+        if "IOLIBS" not in os.environ:
+            logger.warning("missing IOLIBS in os.environ! installation is off.")
+            return False
+
+        vusb_dir = os.environ["IOLIBS"].replace("iolibs", "vusb")
+        if not os.path.isdir(vusb_dir):
+            logger.warning(f"missing {vusb_dir=}")
+            return False
+        gp_library_version = gp.gp_library_version(gp.GP_VERSION_SHORT)[0]  # pyright: ignore [reportAttributeAccessIssue]
+        gp_library_version = tuple(int(x) for x in gp_library_version.split("."))
+        if gp_library_version > (2, 5, 30):
+            return True
+
+        logger.warning(f"{gp_library_version=} too old. usually libgphoto is delivered with pip package, so this should not happen!")
+
+        return False
+
+    # setup
+    if not has_vcam():
+        pytest.skip("system installation does not support virtual camera!")
+
+    # use vcam
+    use_vcam()
+
+    avail_cams = enumerate_dslr_gphoto2()
+    if not avail_cams:
+        pytest.skip("no camera found, skipping test")
+
+    backend = Gphoto2Backend(GroupCameraGphoto2())
+    # deliver
+    backend.start()
+    block_until_device_is_running(backend)
+    yield backend
+    backend.stop()
+
+
+## tests
+
+
+def test_get_images_gphoto2(backend_gphoto2):
+    # get lores and hires images from backend and assert
+
+    with pytest.raises(TimeoutError):
+        with Image.open(io.BytesIO(backend_gphoto2.wait_for_lores_image())) as img:
+            img.verify()
+
+    with Image.open(backend_gphoto2.wait_for_still_file()) as img:
+        img.verify()
+
+
+def test_get_gphoto2_switch_modes(backend_gphoto2: Gphoto2Backend):
+    backend_gphoto2._handle_switchmode_still_mode()
+
+    backend_gphoto2.wait_for_still_file()
+
+    backend_gphoto2._handle_switchmode_video_mode()
+    time.sleep(0.2)
+    backend_gphoto2._handle_switchmode_standby()
+    time.sleep(0.2)
+    backend_gphoto2._handle_switchmode_video_mode()
+    time.sleep(0.2)
+
+    # change some values
+    backend_gphoto2._handle_switchmode_still_mode()
+
+    backend_gphoto2.wait_for_still_file()
+
+    # and try illegal values that raise exception
+    backend_gphoto2._config.parameterset_still.append(Gphoto2Parameters(enabled=True, name="iso", value="illegal"))
+    backend_gphoto2._handle_switchmode_still_mode()
+
+    backend_gphoto2.wait_for_still_file()
+
+    backend_gphoto2._handle_switchmode_video_mode()
+    time.sleep(0.2)
+    backend_gphoto2._handle_switchmode_still_mode()
+    time.sleep(0.2)
+
+
+def test_get_gphoto2_camera_info(backend_gphoto2):
+    logger.info(backend_gphoto2._camera.get_summary())
+
+    config = backend_gphoto2._camera.list_config()
+    for n in range(len(config)):
+        logger.info(f"{config.get_name(n)}, {config.get_value(n)}")
+
+
+def test_get_gphoto2_info():
+    logger.info(f"python-gphoto2: {gp.__version__}")
+    logger.info(f"libgphoto2: {gp.gp_library_version(gp.GP_VERSION_VERBOSE)}")  # pyright: ignore [reportAttributeAccessIssue]
+    logger.info(f"libgphoto2_port: {gp.gp_port_library_version(gp.GP_VERSION_VERBOSE)}")  # pyright: ignore [reportAttributeAccessIssue]

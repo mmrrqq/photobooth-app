@@ -28,7 +28,6 @@ def _serve_media_item(mediaitem_id: UUID, dimension: DimensionTypes):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"cannot find mediaitem by id {mediaitem_id}") from exc
     except Exception as exc:
-        logger.exception(exc)
         raise HTTPException(status_code=500, detail=f"something went wrong, Exception: {exc}") from exc
 
 

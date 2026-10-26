@@ -39,8 +39,7 @@ class GpioLights(BasePlugin[GpioLightsConfig]):
             # use separate exception without log actual exception because it looks like everything is breaking apart but only gpio is not supported.
             logger.warning("GPIOzero is enabled but could not find a supported pin factory. Hardware is not supported.")
         except Exception as exc:
-            logger.exception(exc)
-            logger.error(f"init_io failed, GPIO might behave erratic, error: {exc}")
+            logger.error(f"init_io failed, GPIO might behave erratic, error: {exc}", exc_info=exc)
 
         logger.info("gpio lights enabled and initialized")
 

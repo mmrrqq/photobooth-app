@@ -59,7 +59,7 @@ def get_printer_status_linux(printer_name: str):
 # -------------------------
 # Windows (pywin32)
 # -------------------------
-def classify_windows(status_flags):
+def classify_windows(status_flags: int):
     BUSY = 0x00000200
     PRINTER_STATUS_PAUSED = 0x00000001
     OK = 0x00000000
@@ -74,12 +74,9 @@ def classify_windows(status_flags):
     return PrinterStatus.UNKNOWN
 
 
-def get_printer_status_windows(printer_name):
-    if sys.platform != "win32":
-        raise RuntimeError("Windows-only function")
-
-    import pywintypes
-    import win32print
+def get_printer_status_windows(printer_name: str) -> tuple[PrinterStatus, int]:
+    import pywintypes  # pyright: ignore[reportMissingModuleSource]
+    import win32print  # pyright: ignore[reportMissingModuleSource]
 
     try:
         handle = win32print.OpenPrinter(printer_name)
@@ -123,7 +120,7 @@ def monitor_printer(printer_name, callback, interval=1.0):
                 printer=printer_name,
                 old=last_state,
                 new=new_state,
-                raw=new_state_raw,
+                raw=f"0x{new_state_raw:08X}",
             )
             callback(event)
             last_state = new_state

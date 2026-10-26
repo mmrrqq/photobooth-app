@@ -29,7 +29,7 @@ class ModnetSession(BaseSession):
 
         mask = Image.fromarray((np.squeeze(pred) * 255).astype("uint8"))
 
-        mask = mask.resize(img.size, Image.Resampling.LANCZOS)
+        mask = mask.resize(img.size, Image.Resampling.BICUBIC)
 
         return mask
 

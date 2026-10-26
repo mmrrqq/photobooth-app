@@ -11,6 +11,8 @@ from pathlib import Path
 
 import uvicorn
 
+from .application import app
+from .container import container
 from .database.database import create_db_and_tables
 
 parser = argparse.ArgumentParser()
@@ -22,23 +24,18 @@ logger = logging.getLogger(f"{__name__}")
 
 def main(args=None, run_server: bool = True):
     args = parser.parse_args(args)  # parse here, not above because pytest system exit 2
+    logger.info(f"✨ Welcome to the photobooth-app v{version('photobooth-app')} ✨")
 
-    print("Booting app, this can take some time depending on installed extras...")
+    logger.info("Booting app, this can take some time depending on installed extras...")
 
     # create all db before anything else...
     create_db_and_tables()
 
-    from .application import app
-    from .container import container
-
     host = args.host
     port = args.port
 
-    logger.info("✨ Welcome to the photobooth-app ✨")
-
     logger.info(f"photobooth directory: {Path(__file__).parent.resolve()}")
     logger.info(f"working directory: {Path.cwd().resolve()}")
-    logger.info(f"app version started: {version('photobooth-app')}")
 
     server = uvicorn.Server(uvicorn.Config(app=app, host=host, port=port, log_level="info", workers=None))
 
@@ -53,7 +50,7 @@ def main(args=None, run_server: bool = True):
             container.start()
             server.run()
         except KeyboardInterrupt:
-            print("got ctrl-c, photobooth-app stopped")
+            logger.info("got ctrl-c, photobooth-app stopped")
 
 
 if __name__ == "__main__":

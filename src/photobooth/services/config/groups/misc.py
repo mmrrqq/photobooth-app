@@ -3,6 +3,8 @@ AppConfig class providing central config
 
 """
 
+import secrets
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -13,8 +15,8 @@ class GroupMisc(BaseModel):
 
     model_config = ConfigDict(title="Miscellaneous Config")
 
-    secret_key: str = Field(
-        default="ThisIsTheDefaultSecretWhichShouldBeLongerThan32Chars",
+    secret: str = Field(
+        default_factory=lambda: secrets.token_hex(16),
         min_length=8,
         max_length=64,
         description="Secret to encrypt authentication data. If changed, login authorization is invalidated.",

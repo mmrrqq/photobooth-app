@@ -98,8 +98,7 @@ def generate_zipstream(paths: list[Path]):
         # this generator is called by fastapi in separate background taskgroup. an exception cannot be
         # raised and catched in the actual route because the output has started to the client during generation
         # this one is just to catch the error in the backend - the resulting ZIP download is probably trash.
-        logger.exception(exc)
-        logger.error(f"error creating the compressed data: {exc}")
+        logger.error(f"error creating the compressed data: {exc}", exc_info=exc)
 
 
 @router.get("/list/{dir:path}", response_model=list[PathListItem])

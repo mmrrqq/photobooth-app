@@ -1,7 +1,3 @@
-"""
-abstract for the photobooth-app backends
-"""
-
 import logging
 import threading
 import time
@@ -48,7 +44,7 @@ class StillRequest:
     id: uuid.UUID
     subdevice_index: int
     result_file: Path | None = None
-    error: Exception | None = None
+    # error: Exception | None = None
     condition: threading.Condition = threading.Condition()
 
 
@@ -56,7 +52,7 @@ class StillRequest:
 class MulticamRequest:
     id: uuid.UUID
     result_files: list[Path] | None = None
-    error: Exception | None = None
+    # error: Exception | None = None
     condition: threading.Condition = threading.Condition()
 
 
@@ -134,7 +130,13 @@ class ModeController:
         self.backend = backend
         self.idle_timeout = idle_timeout
 
-        self._lock = threading.Lock()
+        # schützt intern den mode-wechsel intern
+        self._int_lock = threading.Lock()
+        # schützt wenn extern acquired damit der modus garantiert bleibt und kein idle timeout oder livepreview request dazwischen geht
+        # der R-lock kann mehrfach genommen werden VOM SELBEN THREAD.
+        # das ist was wir brauchen um den mode request abzusetzen und dann im camera thread zu wechseln
+        self.ext_mode_switch_lock = threading.RLock()
+
         self.requested_mode: Modes = "standby"
         self.active_mode: Modes | None = None
         self._last_live_request: float | None = time.monotonic()
@@ -144,7 +146,7 @@ class ModeController:
         if self.idle_timeout:
             assert self.idle_timeout > 5, "The idle timeout to set the camera to standby needs to be disabled or at least 5s."
 
-            self._monitor_thread = StoppableThread(target=self._idle_monitor, daemon=True)
+            self._monitor_thread = StoppableThread(name="modecontroller_monitor", target=self._idle_monitor, daemon=True)
             self._monitor_thread.start()
 
     def stop(self):
@@ -157,7 +159,7 @@ class ModeController:
     # ---------------------------------------------------------
 
     def request_mode(self, mode: Modes):
-        with self._lock:
+        with self._int_lock:
             self.requested_mode = mode
 
     def request_video(self):
@@ -174,13 +176,11 @@ class ModeController:
         self.request_mode("standby")
 
     def reset_standby_timer(self):
-        with self._lock:
-            self._last_live_request = time.monotonic()
+        self._last_live_request = time.monotonic()
 
     @property
     def is_mode_change_pending(self):
-        with self._lock:
-            return self.requested_mode != self.active_mode
+        return self.requested_mode != self.active_mode
 
     def _idle_monitor(self):
         """Monitor thread function to request standby if no livestream is requested for idle_timeout seconds"""
@@ -195,7 +195,7 @@ class ModeController:
             if self._last_live_request is None:
                 continue
 
-            with self._lock:
+            with self._int_lock:
                 idle = time.monotonic() - self._last_live_request
                 act = self.active_mode
 
@@ -209,33 +209,49 @@ class ModeController:
     def process_switchmode(self, immediate_forced_mode: Modes | None = None):
         """Wird im stream-thread aufgerufen, wenn es passend für einen potentiellen mode-switch ist"""
 
-        with self._lock:
-            if immediate_forced_mode:
-                self.requested_mode = immediate_forced_mode
+        # Wenn extern freeze aktiv → kein mode switch, ext_lock ist ein RLock, der vom aufrufenden thread genommen wird und hier
+        # erst wenn beide frei sind, ist ein neuer mode-wechsel möglich.
 
-            req = self.requested_mode
-            act = self.active_mode
+        with self.ext_mode_switch_lock:
+            with self._int_lock:
+                if immediate_forced_mode:
+                    self.requested_mode = immediate_forced_mode
 
-        # Kein Modewechsel nötig
-        if req == act:
-            return
+                req = self.requested_mode
+                act = self.active_mode
 
-        logger.info(f"changing mode from {act} to {req} on backend {self.backend}")
+                # Kein Modewechsel nötig
+                if req == act:
+                    return
 
-        # Modewechsel durchführen
-        if req == "video":
-            self.backend._handle_switchmode_video_mode()
-        elif req == "still":
-            self.backend._handle_switchmode_still_mode()
-        elif req == "standby":
-            self.backend._handle_switchmode_standby()
+                # if act is None, in every case run the init handle first
+                # this ensures on first call of process_switchmode the device
+                # is initialized with the desired params properly.
+                if act is None:
+                    logger.info(f"camera not yet configured after startup, apply device init config now on backend {self.backend}")
+                    self.backend._handle_switchmode_init()
 
-        # Mode ist jetzt aktiv
-        with self._lock:
-            self.active_mode = req
+                logger.info(f"changing mode from {act} to {req} on backend {self.backend}")
+
+                # Modewechsel durchführen
+                if req == "video":
+                    self.backend._handle_switchmode_video_mode()
+                elif req == "still":
+                    self.backend._handle_switchmode_still_mode()
+                elif req == "standby":
+                    self.backend._handle_switchmode_standby()
+
+                # Mode ist jetzt aktiv
+                self.active_mode = req
+
+                logger.info("changing mode completed")
 
 
 class AbstractBackend(ResilientService, ABC):
+    @abstractmethod
+    def _handle_switchmode_init(self):
+        """called during device setup"""
+
     @abstractmethod
     def _handle_switchmode_standby(self):
         """called internally by supervising if liveview frames are requested"""
@@ -318,8 +334,6 @@ class AbstractBackend(ResilientService, ABC):
 
             if not ok:
                 raise TimeoutError("timeout waiting for hires frame")
-            if req.error:
-                raise req.error
 
             filepaths = req.result_files
             assert filepaths
@@ -342,8 +356,6 @@ class AbstractBackend(ResilientService, ABC):
 
             if not ok:
                 raise TimeoutError("timeout waiting for hires frame")
-            if req.error:
-                raise req.error
 
             filepath = req.result_file
             assert filepath

@@ -18,6 +18,7 @@ class GroupCommon(BaseModel):
     admin_password: SecretStr = Field(
         default=SecretStr("0000"),
         description="Password to access the admin dashboard.",
+        min_length=4,
     )
 
     @field_serializer("admin_password")

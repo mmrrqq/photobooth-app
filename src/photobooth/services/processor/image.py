@@ -2,16 +2,16 @@ import logging
 
 from statemachine import Event
 
-from ...database.models import MediaitemTypes
 from ..acquisition import AcquisitionService
 from ..config.groups.actions import SingleImageConfigurationSet
-from .base import Capture, CaptureSet, JobModelBase
+from .base import JobModelBase
+from .models import Capture, CaptureSet, UiFrameOverlay
 
 logger = logging.getLogger(__name__)
 
 
 class JobModelImage(JobModelBase[SingleImageConfigurationSet]):
-    _media_type = MediaitemTypes.image
+    _media_type = "image"
 
     def __init__(self, configuration_set: SingleImageConfigurationSet, acquisition_service: AcquisitionService):
         super().__init__(configuration_set, acquisition_service=acquisition_service)
@@ -21,6 +21,18 @@ class JobModelImage(JobModelBase[SingleImageConfigurationSet]):
     @property
     def total_captures_to_take(self) -> int:
         return 1
+
+    @property
+    def captures_definition(self):
+        return None
+
+    @property
+    def frame_overlay(self) -> UiFrameOverlay | None:
+        if self._configuration_set.processing.img_frame.enable and self._configuration_set.processing.img_frame.image:
+            return UiFrameOverlay(
+                self._configuration_set.processing.img_frame.image,
+                mirror_effect=self._configuration_set.processing.img_frame.mirror_effect,
+            )
 
     def on_enter_counting(self):
         self._acquisition_service.thrill_still()

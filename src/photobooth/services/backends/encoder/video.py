@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Event, Lock
 
 import av
+import av.codec.context
 import av.logging
 from PIL import Image
 
@@ -81,20 +82,16 @@ class SoftwareVideoRecorder:
             stream.height = height
             timebase_res = 90000  # 90000 is a default value in mp4/mjpeg
             stream.time_base = Fraction(1, timebase_res)
+            stream.codec_context.time_base = Fraction(1, timebase_res)  # Critical to sync timebase for stream/codec!
             stream.codec_context.max_b_frames = 0
             stream.codec_context.options["tune"] = "zerolatency"  # Optional: faster encoding for real-time
             stream.codec_context.options["preset"] = "veryfast"
-            stream.codec_context.thread_type = "AUTO"
+            stream.codec_context.thread_type = av.codec.context.ThreadType.AUTO
             stream.codec_context.thread_count = 0
-            stream.codec_context.time_base = Fraction(1, timebase_res)  # Critical to sync timebase for stream/codec!
-            # stream.codec_context.profile = "Main"
-
+            stream.codec_context.bit_rate = appconfig.mediaprocessing.video_bitrate * 1000
             if appconfig.mediaprocessing.video_compatibility_mode:
                 stream.pix_fmt = "yuv420p"
 
-            stream.codec_context.bit_rate = appconfig.mediaprocessing.video_bitrate * 1000
-
-            # This is the key: ffmpeg -use_wallclock_as_timestamps
             self._backend.wait_for_lores_image(subdevice_index)
             start_wallclock = time.monotonic()
 

@@ -1,32 +1,27 @@
-"""
-_summary_
-"""
-
 import asyncio
 import json
 import logging
 import os
 import time
 import uuid
-from abc import ABC, abstractmethod
-from asyncio import Queue, QueueFull
-from dataclasses import asdict, dataclass, field
+from abc import abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastapi import Request
+from pydantic import BaseModel
 from sse_starlette.event import ServerSentEvent
-from statemachine import State
+
+from photobooth.services.processor.base import UiJobModel
 
 from ...database.schemas import MediaitemPublic, ShareLimitsPublic, UsageStatsPublic
 from ...models.genericstats import GenericStats
-from ..processor.base import JobModelBase
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SseEventBase(ABC):
+class SseEventBase(BaseModel):
     """basic class for sse events"""
 
     @property
@@ -40,7 +35,6 @@ class SseEventBase(ABC):
         pass
 
 
-@dataclass
 class SseEventTranslateableFrontendNotification(SseEventBase):
     """some visible message in frontend"""
 
@@ -56,24 +50,15 @@ class SseEventTranslateableFrontendNotification(SseEventBase):
 
     @property
     def data(self) -> str:
-        return json.dumps(
-            dict(
-                message_key=self.message_key,
-                context_data=self.context_data,
-                color=self.color,
-                icon=self.icon,
-                spinner=self.spinner,
-            )
-        )
+        return self.model_dump_json()
 
 
-@dataclass
 class SseEventProcessStateinfo(SseEventBase):
     """_summary_"""
 
-    source: State | None
-    target: State | None
-    jobmodel: JobModelBase | None
+    source: str | None
+    target: str | None
+    jobmodel: UiJobModel | None
 
     @property
     def event(self) -> str:
@@ -83,18 +68,11 @@ class SseEventProcessStateinfo(SseEventBase):
     def data(self) -> str:
         # either have it all or nothing
         if self.jobmodel and self.source and self.target:
-            return json.dumps(
-                dict(
-                    source=self.source.id,
-                    target=self.target.id,
-                    jobmodel=self.jobmodel.export(),
-                )
-            )
+            return self.model_dump_json()
         else:
             return json.dumps({})
 
 
-@dataclass
 class SseEventDbInsert(SseEventBase):
     mediaitem: MediaitemPublic
 
@@ -107,7 +85,6 @@ class SseEventDbInsert(SseEventBase):
         return self.mediaitem.model_dump_json()
 
 
-@dataclass
 class SseEventDbUpdate(SseEventBase):
     mediaitem: MediaitemPublic
 
@@ -120,7 +97,6 @@ class SseEventDbUpdate(SseEventBase):
         return self.mediaitem.model_dump_json()
 
 
-@dataclass
 class SseEventDbRemove(SseEventBase):
     mediaitem: MediaitemPublic
 
@@ -133,7 +109,6 @@ class SseEventDbRemove(SseEventBase):
         return self.mediaitem.model_dump_json()
 
 
-@dataclass
 class SseEventLogRecord(SseEventBase):
     """basic class for sse events"""
 
@@ -151,20 +126,9 @@ class SseEventLogRecord(SseEventBase):
 
     @property
     def data(self) -> str:
-        return json.dumps(
-            dict(
-                time=self.time,
-                level=self.level,
-                message=self.message,
-                name=self.name,
-                funcName=self.funcName,
-                lineno=self.lineno,
-                # display_notification=self.display_notification,
-            )
-        )
+        return self.model_dump_json()
 
 
-@dataclass
 class SseEventOnetimeInformationRecord(SseEventBase):
     """basic class for sse events"""
 
@@ -186,24 +150,9 @@ class SseEventOnetimeInformationRecord(SseEventBase):
 
     @property
     def data(self) -> str:
-        return json.dumps(
-            dict(
-                version=self.version,
-                platform_system=self.platform_system,
-                platform_release=self.platform_release,
-                platform_machine=self.platform_machine,
-                platform_python_version=self.platform_python_version,
-                platform_node=self.platform_node,
-                platform_cpu_count=self.platform_cpu_count,
-                model=self.model,
-                data_directory=str(self.data_directory),
-                python_executable=self.python_executable,
-                disk=self.disk,
-            )
-        )
+        return self.model_dump_json()
 
 
-@dataclass
 class SseEventIntervalInformationRecord(SseEventBase):
     """basic class for sse events"""
 
@@ -225,22 +174,7 @@ class SseEventIntervalInformationRecord(SseEventBase):
 
     @property
     def data(self) -> str:
-        return json.dumps(
-            dict(
-                cpu_percent=self.cpu_percent,
-                memory=self.memory,
-                cma=self.cma,
-                backends=self.backends,
-                # https://stackoverflow.com/questions/77637278/sqlalchemy-model-to-json
-                stats_counter=[UsageStatsPublic.model_validate(entry).model_dump(mode="json") for entry in self.stats_counter],
-                limits_counter=[ShareLimitsPublic.model_validate(entry).model_dump(mode="json") for entry in self.limits_counter],
-                battery_percent=self.battery_percent,
-                temperatures=self.temperatures,
-                mediacollection=self.mediacollection,
-                plugins=[asdict(entry) for entry in self.plugins],
-                pi_throttled_flags=self.pi_throttled_flags,
-            )
-        )
+        return self.model_dump_json()
 
 
 @dataclass
@@ -248,7 +182,7 @@ class Client:
     """Class each individual client connected"""
 
     request: Request
-    queue: Queue[ServerSentEvent]
+    queue: asyncio.Queue[ServerSentEvent]
 
 
 class SseService:
@@ -293,7 +227,7 @@ class SseService:
                     )
                 )
 
-            except QueueFull:
+            except asyncio.QueueFull:
                 # fail in silence if queue is full - though is critical for init sse messages.
                 # on the other side, queue better not infinite if disconnect is not working proper and queue remains getting larger
                 pass

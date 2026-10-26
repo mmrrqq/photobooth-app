@@ -7,12 +7,12 @@ from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 import av
+import numpy as np
 import piexif
 from PIL import Image, ImageChops
 
-from photobooth import PATH_CAMERA_ORIGINAL, PATH_PROCESSED, PATH_UNPROCESSED
+from photobooth import PATH_CAMERA_ORIGINAL, PATH_PROCESSED
 from photobooth.database.models import Mediaitem
-from photobooth.database.types import MediaitemTypes
 from photobooth.services.backends.abstractbackend import AbstractBackend
 from photobooth.utils.helper import filename_str_time
 
@@ -20,14 +20,16 @@ logger = logging.getLogger(name=None)
 
 
 def block_until_device_is_running(backend: AbstractBackend):
-    """Mostly used for testing to ensure the device is up.
+    """Mostly used for testing to ensure the device is up."""
 
-    Returns:
-        _type_: _description_
-    """
+    counter = 0
     while not backend.is_running():
         logger.debug("wait for startup")
-        time.sleep(0.1)
+        time.sleep(0.5)
+        counter += 1
+
+        if counter == 20:  # max 10s
+            raise RuntimeError("abort waiting for startup!")
 
 
 def get_images(backend: AbstractBackend, multicam_is_error: bool = False):
@@ -68,7 +70,7 @@ def is_same(img1: Image.Image, img2: Image.Image):
 
 def video_duration(path: str | Path) -> float:
     with av.open(path) as container:
-        dur = container.streams[0].duration
+        dur = float(container.streams[0].duration or 0)
         tb = container.streams[0].time_base
         assert dur, "cannot determine duration (ticks)"
         assert tb, "cannot determine timebase (s/tick)"
@@ -109,13 +111,11 @@ def dummy_mediaitem():
 
     img.save(img_path_original)
     shutil.copy(img_path_original, PATH_PROCESSED)
-    shutil.copy(img_path_original, PATH_UNPROCESSED)
 
     new_item_instance = Mediaitem(
         job_identifier=uuid4(),
-        media_type=MediaitemTypes.image,
+        media_type="image",
         captured_original=img_path_original,
-        unprocessed=Path(PATH_UNPROCESSED, img_path_original.name),
         processed=Path(PATH_PROCESSED, img_path_original.name),
         pipeline_config={},
         show_in_gallery=True,
@@ -124,21 +124,22 @@ def dummy_mediaitem():
     return new_item_instance
 
 
-def dummy_animation(filepath: Path):
-    # Create two dummy frames (solid colors for simplicity)
-    frame1 = Image.new("RGB", (600, 400), color=(255, 0, 0))  # red
-    frame2 = Image.new("RGB", (600, 400), color=(0, 255, 0))  # green
-    frame3 = Image.new("RGB", (600, 400), color=(0, 0, 255))  # blue
+def dummy_animation(filepath: Path, size=(600, 400), num_frames: int = 6, noise_std=100):
 
-    # Save into a BytesIO buffer as animated WebP
+    frames = []
 
-    frame1.save(
+    for _ in range(num_frames):
+        arr = np.random.normal(127, noise_std, (size[1], size[0], 3)).clip(0, 255).astype(np.uint8)
+        frames.append(Image.fromarray(arr, "RGB"))
+
+    durations = [200 + i * 50 for i in range(len(frames))]
+
+    frames[0].save(
         filepath,
-        format=None,
         save_all=True,
-        append_images=[frame2, frame3],
-        duration=[200, 400, 200],  # per-frame duration in ms
-        loop=0,  # 0 = infinite loop
+        append_images=frames[1:],
+        duration=durations,
+        loop=0,
     )
 
 

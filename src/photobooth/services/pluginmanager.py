@@ -17,13 +17,13 @@ class PluginManagerService(BaseService):
         # use central singleton pluggy pluginmanager
         self.pm: PluginManager = pluggy_pm
 
-        logger.info(f"registered plugins: {self.list_plugins()}")
-
         self.pm.hook.init()
 
     def start(self):
         """When the pluginmanager is started, it will start all registered plugins that have the start hook registered"""
         super().start()
+
+        logger.info(f"registered plugins: {self.list_plugins()}")
 
         self.pm.hook.start()
 

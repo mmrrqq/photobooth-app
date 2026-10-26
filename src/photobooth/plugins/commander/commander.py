@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class ThreadCommand(threading.Thread):
     def __init__(self, task: TaskCommand, event: eventHooks, mediaitem_type: MediaitemTypes | None):
         super().__init__(daemon=True)
-        fmt = {"event": event, "mediaitem_type": mediaitem_type.value if mediaitem_type else None}
+        fmt = {"event": event, "mediaitem_type": mediaitem_type if mediaitem_type else None}
         self.command = str(task.command).format(**fmt)
         self.delay_before = task.delay_before
         self.timeout = task.timeout
@@ -57,7 +57,7 @@ class ThreadUrl(threading.Thread):
         self.delay_before = task.delay_before
         self.timeout = task.timeout
         self.body_parameters_as_json = task.body_parameters_as_json
-        fmt = {"event": event, "mediaitem_type": mediaitem_type.value if mediaitem_type else None}
+        fmt = {"event": event, "mediaitem_type": mediaitem_type if mediaitem_type else None}
         self.query_params: dict[str, str] = {param.key: str(param.value).format(**fmt) for param in task.parameter if param.where == "query"}
         self.body_params: dict[str, str] = {param.key: str(param.value).format(**fmt) for param in task.parameter if param.where == "body"}
         self.method: requestMethods = task.method

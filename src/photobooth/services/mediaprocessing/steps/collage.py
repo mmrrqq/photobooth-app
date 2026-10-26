@@ -23,7 +23,7 @@ class MergeCollageStep(PipelineStep):
         for merge_def, img in sorted(layer_pairs, key=lambda p: p[0].pos_z, reverse=False):
             logger.debug(merge_def)
 
-            img = ImageOps.fit(img, (merge_def.width, merge_def.height), method=Image.Resampling.LANCZOS)
+            img = ImageOps.fit(img, (merge_def.width, merge_def.height), method=Image.Resampling.BICUBIC)
             img, offset_x, offset_y = __class__.rotate(img, merge_def.rotate)
 
             # _image needs to have an alpha channel, otherwise paste with mask=_image fails.

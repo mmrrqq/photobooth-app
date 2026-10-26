@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Annotated, Generic, TypeVar
+from typing import Generic, TypeVar
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, FilePath, NonNegativeInt
+from pydantic import BaseModel, ConfigDict, Field, FilePath, NonNegativeInt
 from pydantic_extra_types.color import Color
 
+from ..models.frameoverlay import FrameOverlay
 from ..models.models import AnimationMergeDefinition, CollageMergeDefinition, PluginFilters, TextsConfig
 from ..models.trigger import GpioTrigger, KeyboardTrigger, Trigger, UiTrigger
-from ..validators import ensure_demoassets
 
 
 class SingleImageJobControl(BaseModel):
@@ -114,7 +114,7 @@ class SingleImageProcessing(BaseModel):
         default=False,
         description="Add image from file to background (useful only if image is extended or background removed)",
     )
-    img_background_file: Annotated[FilePath | None, BeforeValidator(ensure_demoassets)] = Field(
+    img_background_file: FilePath | None = Field(
         default=None,
         description="Image file to use as background filling transparent area. File needs to be located in working directory/userdata/*",
         json_schema_extra={"list_api": "/api/admin/enumerate/userfiles"},
@@ -122,15 +122,14 @@ class SingleImageProcessing(BaseModel):
 
     image_filter: PluginFilters = Field(default=PluginFilters("original"))
 
-    img_frame_enable: bool = Field(
-        default=False,
-        description="Mount captured image to frame.",
+    img_frame: FrameOverlay = Field(
+        default=FrameOverlay(
+            enable=False,
+            image=None,
+            mirror_effect=False,
+        ),
     )
-    img_frame_file: Annotated[FilePath | None, BeforeValidator(ensure_demoassets)] = Field(
-        default=None,
-        description="Image file to which the captured image is mounted to. Frame determines the output image size! Photos are visible through transparant parts. Image needs to be transparent (PNG). File needs to be located in userdata/*",
-        json_schema_extra={"list_api": "/api/admin/enumerate/userfiles"},
-    )
+
     texts_enable: bool = Field(
         default=False,
         description="General enable apply texts below.",
@@ -166,7 +165,7 @@ class CollageProcessing(BaseModel):
         default=False,
         description="Add image from file to background (useful only if image is extended or background removed)",
     )
-    capture_img_background_file: Annotated[FilePath | None, BeforeValidator(ensure_demoassets)] = Field(
+    capture_img_background_file: FilePath | None = Field(
         default=None,
         description="Image file to use as background filling transparent area. File needs to be located in working directory/userdata/*",
         json_schema_extra={"list_api": "/api/admin/enumerate/userfiles"},
@@ -197,7 +196,7 @@ class CollageProcessing(BaseModel):
         default=False,
         description="Add image from file to background.",
     )
-    canvas_img_background_file: Annotated[FilePath | None, BeforeValidator(ensure_demoassets)] = Field(
+    canvas_img_background_file: FilePath | None = Field(
         default=None,
         description="Image file to use as background filling transparent area. File needs to be located in userdata/*",
         json_schema_extra={"list_api": "/api/admin/enumerate/userfiles"},
@@ -206,7 +205,7 @@ class CollageProcessing(BaseModel):
         default=False,
         description="Overlay image on canvas image.",
     )
-    canvas_img_front_file: Annotated[FilePath | None, BeforeValidator(ensure_demoassets)] = Field(
+    canvas_img_front_file: FilePath | None = Field(
         default=None,
         description="Image file to paste on top over photos and backgrounds. Photos are visible only through transparant parts. Image needs to be transparent (PNG). File needs to be located in working directory/userdata/*",
         json_schema_extra={"list_api": "/api/admin/enumerate/userfiles"},
@@ -345,8 +344,11 @@ class GroupActions(BaseModel):
                     remove_background=True,
                     img_background_enable=True,
                     img_background_file=Path("userdata/demoassets/backgrounds/background.jpg"),
-                    img_frame_enable=True,
-                    img_frame_file=Path("userdata/demoassets/frames/frame_image_photobooth-app.png"),
+                    img_frame=FrameOverlay(
+                        enable=True,
+                        image=Path("userdata/demoassets/frames/frame_image_photobooth-app.png"),
+                        mirror_effect=False,
+                    ),
                     texts_enable=True,
                     texts=[
                         TextsConfig(

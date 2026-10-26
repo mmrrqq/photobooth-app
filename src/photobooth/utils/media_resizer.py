@@ -2,14 +2,17 @@ import logging
 from pathlib import Path
 
 import av
+import av.codec.context
 import piexif
 from av import VideoStream
 from PIL import Image, ImageOps, ImageSequence
 from simplejpeg import decode_jpeg, decode_jpeg_header, encode_jpeg
+from typing_extensions import deprecated
 
 logger = logging.getLogger(__name__)
 
 
+@deprecated("use resize_jpeg_simplejpeg")
 def resize_jpeg_pillow(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
     """scale a jpeg buffer to another buffer using pillow"""
 
@@ -47,7 +50,6 @@ def resize_jpeg_simplejpeg(filepath_in: Path, filepath_out: Path, scaled_min_len
     target_width = int(int(width) * scaling_factor)
 
     if scaling_factor > 1:
-        logger.warning("scale factor bigger than 1 - consider optimize config, usually images shall shrink, resizing skipped")
         buffer_out = jpeg_bytes_in
     else:
         decoded_img = decode_jpeg(jpeg_bytes_in, min_height=target_height, min_width=target_width, fastdct=True)
@@ -63,10 +65,9 @@ def resize_jpeg_simplejpeg(filepath_in: Path, filepath_out: Path, scaled_min_len
 
 def resize_jpeg(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
     resize_jpeg_simplejpeg(filepath_in, filepath_out, scaled_min_length)  # faster
-    # resize_jpeg_pillow(filepath_in, filepath_out, scaled_min_length) # possibly better quality and more accurate dimensions
 
 
-def resize_animation_pillow(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
+def resize_webp_avif_gif_pillow(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
     """Scale an animated image sequence (GIF/WebP/AVIF) and preserve frame durations."""
 
     # format specific optimizations:
@@ -86,7 +87,7 @@ def resize_animation_pillow(filepath_in: Path, filepath_out: Path, scaled_min_le
     for frame in ImageSequence.Iterator(pil_animated_img):
         frame.load()  # ensure metadata is parsed so for AVIF/WEBP duration is avail. GIF is different and would not need this.
         thumb = frame.copy()
-        thumb.thumbnail((scaled_min_length, scaled_min_length), Image.Resampling.LANCZOS)
+        thumb.thumbnail((scaled_min_length, scaled_min_length), Image.Resampling.BICUBIC)
         resized_frames.append(thumb)
         d = frame.info.get("duration", pil_animated_img.info.get("duration", 1000))
         durations.append(int(d))
@@ -101,6 +102,60 @@ def resize_animation_pillow(filepath_in: Path, filepath_out: Path, scaled_min_le
         loop=0,
         **format_params,
     )
+
+
+def resize_gif_pyav(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
+    with av.open(filepath_in) as container_in, av.open(filepath_out, mode="w") as container_out:
+        stream_in = container_in.streams.video[0]
+        tb_in = stream_in.time_base  # GIF timebase (usually 1/100)
+        assert tb_in
+
+        # --- Determine output size from first frame
+        first_frame = next(container_in.decode(stream_in))
+        w, h = first_frame.width, first_frame.height
+
+        scale = scaled_min_length / max(w, h)
+        if scale < 1.0:
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+        else:
+            new_w, new_h = w, h
+
+        # Rewind
+        container_in.seek(0)
+
+        # --- OUTPUT ---
+        stream_out = container_out.add_stream("gif", rate=25)
+        stream_out.time_base = tb_in
+        stream_out.codec_context.time_base = tb_in
+        stream_out.width = new_w
+        stream_out.height = new_h
+        stream_out.pix_fmt = "rgb8"
+
+        last_pts = 0
+        rescaled = None
+
+        # --- STREAMING DECODE → RESCALE → ENCODE ---
+        for frame in container_in.decode(stream_in):
+            assert frame.pts is not None
+            last_pts = frame.pts + frame.duration
+
+            # Rescale + convert to rgb8 using libswscale
+            rescaled = frame.reformat(width=new_w, height=new_h, format="rgb8", interpolation="BICUBIC")
+
+            for packet in stream_out.encode(rescaled):
+                container_out.mux(packet)
+
+        # --- Duplicate last frame ---
+        if rescaled is not None:
+            # dup = rescaled
+            rescaled.pts = last_pts
+            for packet in stream_out.encode(rescaled):
+                container_out.mux(packet)
+
+        # --- Flush ---
+        for packet in stream_out.encode():
+            container_out.mux(packet)
 
 
 def resize_mp4(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
@@ -120,40 +175,42 @@ def resize_mp4(filepath_in: Path, filepath_out: Path, scaled_min_length: int):
 
         return new_width, new_height
 
-    input_container = av.open(filepath_in)
-    input_stream = input_container.streams.video[0]
-    input_stream.thread_type = "AUTO"  # speed up decoding, see benchmark results.
-    input_stream.thread_count = 0
+    with av.open(filepath_in) as input, av.open(filepath_out, mode="w", options={"movflags": "faststart"}) as output:
+        in_stream = input.streams.video[0]
 
-    ow, oh = scale_image_to_min_longest_side(input_stream.width, input_stream.height, scaled_min_length)
+        in_stream.thread_type = av.codec.context.ThreadType.AUTO  # speed up decoding, see benchmark results.
+        in_stream.thread_count = 0
+        in_fps = in_stream.codec_context.framerate  # or input_stream.average_rate?
+        in_time_base = in_stream.time_base
+        assert in_time_base, "cannot determine timebase of input stream"
 
-    output_container = av.open(filepath_out, mode="w", options={"movflags": "faststart"})
-    output_stream: VideoStream = output_container.add_stream("h264", rate=input_stream.codec_context.framerate)  # rate is fps
-    output_stream.width = ow
-    output_stream.height = oh
-    output_stream.codec_context.options["preset"] = "veryfast"
-    output_stream.codec_context.options["crf"] = "23"  # 23 default, 17-18 is visually lossless
-    # output_stream.codec_context.bit_rate = 5000000  # 5000k==5Mbps seems reasonable for simple streams in the 1080range
+        ow, oh = scale_image_to_min_longest_side(in_stream.width, in_stream.height, scaled_min_length)
+        out_stream: VideoStream = output.add_stream("h264", rate=in_fps)  # rate is fps
+        out_stream.thread_type = av.codec.context.ThreadType.AUTO  # speed up encoding
+        out_stream.thread_count = 0
+        out_stream.width = ow
+        out_stream.height = oh
+        out_stream.time_base = in_time_base
+        out_stream.codec_context.time_base = in_time_base  # Critical to sync timebase for stream/codec!
+        out_stream.codec_context.options["preset"] = "veryfast"
+        out_stream.codec_context.options["crf"] = "23"  # 23 default, 17-18 is visually lossless
+        # output_stream.codec_context.bit_rate = 5000000  # 5000k==5Mbps seems reasonable for simple streams in the 1080range
 
-    for frame in input_container.decode(input_stream):
-        # Das Frame in der Zielgröße skalieren
-        scaled_frame = frame.reformat(
-            width=output_stream.width,
-            height=output_stream.height,
-            # interpolation=Interpolation.BILINEAR, # default is BILINEAR
-        )
+        for frame in input.decode(in_stream):
+            # Das Frame in der Zielgröße skalieren
+            scaled_frame = frame.reformat(
+                width=out_stream.width,
+                height=out_stream.height,
+                # interpolation=Interpolation.BILINEAR, # default is BILINEAR
+            )
 
-        # Das skalierte Frame in den Ausgabestream codieren
-        for packet in output_stream.encode(scaled_frame):
-            output_container.mux(packet)
+            # Das skalierte Frame in den Ausgabestream codieren
+            for packet in out_stream.encode(scaled_frame):
+                output.mux(packet)
 
-    # Restliche Frames flushen
-    for packet in output_stream.encode():
-        output_container.mux(packet)
-
-    # Container schließen
-    input_container.close()
-    output_container.close()
+        # Restliche Frames flushen
+        for packet in out_stream.encode():
+            output.mux(packet)
 
 
 def resize(filepath_in: Path, filepath_out: Path, scaled_min_length: int) -> None:
@@ -166,9 +223,12 @@ def resize(filepath_in: Path, filepath_out: Path, scaled_min_length: int) -> Non
 
     if suffix.lower() in (".jpg", ".jpeg"):
         resize_jpeg(filepath_in, filepath_out, scaled_min_length)
-    elif suffix.lower() in (".gif", ".webp", ".avif"):
-        resize_animation_pillow(filepath_in, filepath_out, scaled_min_length)
+    elif suffix.lower() == ".gif":
+        resize_gif_pyav(filepath_in, filepath_out, scaled_min_length)
+        # could be done by pillow also, but pillow is very slow at it, so we use pyav.
     elif suffix.lower() == ".mp4":
         resize_mp4(filepath_in, filepath_out, scaled_min_length)
+    elif suffix.lower() in (".webp", ".avif"):
+        resize_webp_avif_gif_pillow(filepath_in, filepath_out, scaled_min_length)
     else:
         raise RuntimeError(f"filetype with suffix '{suffix}' not supported")

@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from ..appconfig import appconfig
 from ..database.database import engine
 from ..database.models import Mediaitem, ShareLimits
-from ..database.types import MediaitemTypes
 from ..utils.exceptions import WrongMediaTypeError
 from ..utils.printer import PrinterStatus, get_printer_status
 from .base import BaseService
@@ -47,7 +46,7 @@ class ShareService(BaseService):
             raise exc
 
         # check for handlesOnlyImages and abort if media_type is not an image
-        if action_config.handles_images_only and mediaitem.media_type not in (MediaitemTypes.image, MediaitemTypes.collage):
+        if action_config.handles_images_only and mediaitem.media_type not in ("image", "collage"):
             # this action handles images only, so ensure it is an image, otherwise send SSE notification.
             sse_service.dispatch_event(
                 SseEventTranslateableFrontendNotification(
@@ -128,7 +127,7 @@ class ShareService(BaseService):
         try:
             formatted_command = str(action_config.processing.share_command).format(
                 filename=filename,
-                media_type=media_type.value,
+                media_type=media_type,
                 action_config_name=action_config_name,
                 printer_name=action_config.processing.printer_name,
                 **share_parameters,
@@ -172,7 +171,6 @@ class ShareService(BaseService):
 
         except Exception as exc:
             # other errors (timeout, OSError, etc.)
-            logger.exception("Unexpected error running command")
             raise RuntimeError(f"Unexpected error running command: {exc}") from exc
 
         else:

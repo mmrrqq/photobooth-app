@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import subprocess
@@ -32,6 +33,8 @@ def serial_ports() -> list[str]:
 
 
 def webcameras() -> list[str]:
+    assert sys.platform in ("win32", "linux", "darwin"), "platform not supported to enumerate"
+
     def _webcameras_linux() -> list[str]:
         devices: list[str] = []
 
@@ -51,15 +54,19 @@ def webcameras() -> list[str]:
         try:
             # PowerShell command to fetch usb webcams (1st line) as well as internal cameras (2nd line)
             pwsh = r"""
-            $pnpdevs = Get-PnpDevice -Status OK | Where-Object { $_.Class -in @("Camera","Image") } | Select-Object -ExpandProperty FriendlyName
-            $cimdevs = Get-CimInstance Win32_PnPEntity |
-                Where-Object { $_.Name -match "Camera" -or $_.Caption -match "Camera" } |
-                Select-Object -ExpandProperty Name
+            $pnpdevs = @(Get-PnpDevice -Status OK |
+                Where-Object { $_.Class -in @("Camera","Image") } |
+                Select-Object -ExpandProperty FriendlyName)
 
-            # Combine first, then sort, then stream each element as its own line
+            $cimdevs = @(Get-CimInstance Win32_PnPEntity |
+                Where-Object { $_.Name -match "Camera" -or $_.Caption -match "Camera" } |
+                Select-Object -ExpandProperty Name)
+
+
+            # Combine first, then sort, then convert to json
             ($pnpdevs + $cimdevs) |
                 Sort-Object -Unique |
-                Out-String -Stream
+                ConvertTo-Json
             """
 
             result = subprocess.run(
@@ -69,7 +76,8 @@ def webcameras() -> list[str]:
                 check=True,
             )
 
-            devices += [line.strip() for line in result.stdout.split("\n") if line.strip()]
+            devices = json.loads(result.stdout)
+
         except Exception as exc:
             logger.warning(f"error enumerating webcams: {exc}")
 
@@ -92,17 +100,14 @@ def webcameras() -> list[str]:
         elif sys.platform == "darwin":
             return _webcameras_darwin()
         else:
-            raise OSError("platform not supported to enumerate")
+            raise OSError(f"platform {sys.platform} not supported")
 
 
 def dslr_gphoto2() -> list[int]:
     with enumerate_lock:
         available_indexes: list[int] = []
 
-        try:
-            import gphoto2 as gp  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError("cannot enumerate gphoto2 cameras because not supported by platform or not installed.") from exc
+        import gphoto2 as gp
 
         camera_list = gp.Camera.autodetect()  # pyright: ignore [reportAttributeAccessIssue]
         if len(camera_list) == 0:
@@ -118,7 +123,7 @@ def dslr_gphoto2() -> list[int]:
 
 def rclone_remotes() -> list[str]:
     with enumerate_lock:
-        rclone_api = RcloneApi(bind="localhost:5574")
+        rclone_api = RcloneApi(bind="localhost:5574", config_file=Path("./config/rclone.conf"))
         rclone_api.start()
         remotes = rclone_api.config_listremotes().remotes
         rclone_api.stop()

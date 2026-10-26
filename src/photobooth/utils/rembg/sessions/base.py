@@ -35,7 +35,7 @@ class BaseSession:
     def normalize_imagenet(
         self, img: PILImage, mean: tuple[float, float, float], std: tuple[float, float, float], size: tuple[int, int]
     ) -> dict[str, np.ndarray]:
-        im = img.convert("RGB").resize(size, Image.Resampling.LANCZOS)
+        im = img.convert("RGB").resize(size, Image.Resampling.BICUBIC)
 
         im_ary = np.array(im)
         im_ary = im_ary / max(np.max(im_ary), 1e-6)
@@ -50,7 +50,7 @@ class BaseSession:
         return {self.inner_session.get_inputs()[0].name: np.expand_dims(tmpImg, 0).astype(np.float32)}
 
     def normalize_2(self, img: PILImage, size: tuple[int, int]) -> dict[str, np.ndarray]:
-        im = img.convert("RGB").resize(size, Image.Resampling.LANCZOS)
+        im = img.convert("RGB").resize(size, Image.Resampling.BICUBIC)
 
         # Convert to numpy array (H height, W width, C channels), dtype float32
         im_ary = np.array(im).astype(np.float32)

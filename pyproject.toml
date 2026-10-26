@@ -32,16 +32,18 @@ keywords = [
   "picamera2",
 ]
 dependencies = [
-  "fastapi>=0.106.0",
-  "opencv-python-headless~=4.13.0",
+  "fastapi>=0.140.0",
+  "python-multipart>=0.0.22", # fastapi forms processing
+  "pyjwt[crypto]>=2.12.0",    # fastapi auth
+  "opencv-python-headless~=5.0.0",
   "numpy>=2.0.0",
   "pillow>=12.1.1",
   "psutil>=7.2.0",
-  "pydantic>=2.11.2",
+  "pydantic>=2.13.0",
   "pydantic-extra-types>=2.3.0",
-  "pydantic-settings>=2.11,<2.16",
-  "sse-starlette>=2.2.0,<4.0.0",
-  "uvicorn[standard]>=0.24",                                                        # adds websockets and uvloop
+  "pydantic-settings>=2.11,<2.17",
+  "sse-starlette>=2.2.0,<4.0.0", #TODO: replace by fastapi.see internal in future
+  "uvicorn[standard]>=0.50.0",                                                        # adds websockets and uvloop
   "python-dotenv>=1.0.0",
   "pyserial~=3.5",
   "jsonref>=1.1.0",
@@ -50,20 +52,20 @@ dependencies = [
   "gpiozero~=2.0.0",
   "gphoto2>=2.6.1,<2.7; platform_system == 'Linux' or platform_system == 'Darwin'",
   "python-statemachine>=3.1,<3.3",
-  "python-multipart>=0.0.22",
-  "pyjwt[crypto]>=2.12.0",
   "piexif>=1.1.3",
   "SQLAlchemy>=2.0.37",
   "simplejpeg>=1.8.2",
   "pluggy>=1.5.0",
-  "av>=17.0.1,<17.2",
+  "av>=18.0.0,<19.1.0",
   "alembic>=1.15.2",
-  "onnxruntime",
-  "rclone-bin-api>=1.0.4",
-  "wigglecam>=0.4.1",                                                                      # to use the imagemessagedataclass, no dependencies in base module
+  "onnxruntime>=1.29.0,<1.32.0",
+  "rclone-bin-api>=1.0.7",
+  "wigglecam>=0.4.2",                                                                      # to use the imagemessagedataclass, no dependencies in base module
   "pynng~=0.9.0",                                                                          # needs python3-dev package
   "requests",
   "pywin32; platform_system == 'Windows'",
+  # "pyqt5>=5.15.11",
+  # "tzlocal>=5.4.4",
 ]
 
 [project.scripts]
@@ -74,7 +76,7 @@ commander = 'photobooth.plugins.commander.commander'
 gpio_lights = 'photobooth.plugins.gpio_lights.gpio_lights'
 wled = 'photobooth.plugins.wled.wled'
 filter_pilgram2 = 'photobooth.plugins.filter_pilgram2.filter_pilgram2'
-synchronizer_rclone = 'photobooth.plugins.synchronizer_rclone.synchronizer_rclone'
+synchronizer = 'photobooth.plugins.synchronizer.synchronizer'
 
 
 [project.urls]
@@ -96,7 +98,10 @@ omit = ["test_*.py", "./src/tests/*"]
 parallel = true
 concurrency = ["thread", "multiprocessing"]
 
-[tool.pyright]
+#[tool.zuban] 
+#mode = "default"
+
+[tool.basedpyright]
 venvPath = "."
 venv = ".venv"
 ignore = ["./experimental/"]
@@ -138,8 +143,10 @@ dev = [
   "coverage[toml]",
   "httpx2",
   "pydot",
-  "pre-commit",
-  "pyright",
+  # "pre-commit",
+  "basedpyright>=1.39.9",
+  # "pyright",
+  # "zuban>=0.9.0",
   "poethepoet",
   "wigglecam[node]",
   "pyturbojpeg~=1.8.0",
@@ -155,7 +162,7 @@ default-groups = [
 # uv does not yet support [tool.pdm.scripts], so we skip this for now... https://github.com/astral-sh/uv/issues/5903
 [tool.poe.tasks]
 lint = [
-  { cmd = "uv run pyright" },
+  { cmd = "uv run basedpyright" },
   { cmd = "uv run ruff check" },
   { cmd = "uv run ruff format --check" },
 ]
@@ -166,10 +173,11 @@ test = [
 benchmark = [
   { cmd = "pytest --benchmark-only --benchmark-autosave --basetemp=./tests_tmp/ -v ./src/tests/benchmarks" },
 ]
+list_outdated = [{ cmd = "uv pip list --outdated" }]
 
 
 [build-system]
-requires = ["uv_build>=0.11.0,<0.12.0"]
+requires = ["uv_build>=0.11.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -177,6 +185,6 @@ module-name = ["photobooth", "web"]
 
 # comment out for local development using editable installs
 [tool.uv.sources]
-# # rclone-bin-api = {  workspace = true, editable=true }
+# rclone-bin-api = {  workspace = true, editable=true }
 # rclone-bin-api = { path = "../rclone-bin-api", editable=true }
 # wigglecam = { path="../photobooth-wigglecam", editable = true }

@@ -4,21 +4,23 @@ from uuid import uuid4
 
 from statemachine import Event
 
-from ... import PATH_PROCESSED, PATH_UNPROCESSED
+from ... import PATH_PROCESSED
 from ...appconfig import appconfig
-from ...database.models import Mediaitem, MediaitemTypes
+from ...database.models import Mediaitem
 from ...utils.helper import filename_str_time
 from ..acquisition import AcquisitionService
 from ..config.groups.actions import AnimationConfigurationSet, SingleImageProcessing
+from ..config.models.frameoverlay import FrameOverlay
 from ..config.models.models import PluginFilters
 from ..mediaprocessing.processes import process_and_generate_animation
-from .base import Capture, CaptureSet, JobModelBase
+from .base import JobModelBase
+from .models import Capture, CaptureSet, UiCaptureDefinition, UiFrameOverlay
 
 logger = logging.getLogger(__name__)
 
 
 class JobModelAnimation(JobModelBase[AnimationConfigurationSet]):
-    _media_type = MediaitemTypes.animation
+    _media_type = "animation"
 
     def __init__(self, configuration_set: AnimationConfigurationSet, acquisition_service: AcquisitionService):
         super().__init__(configuration_set, acquisition_service=acquisition_service)
@@ -28,6 +30,18 @@ class JobModelAnimation(JobModelBase[AnimationConfigurationSet]):
     @property
     def total_captures_to_take(self) -> int:
         return self._get_number_of_captures_from_merge_definition(self._configuration_set.processing.merge_definition)
+
+    @property
+    def captures_definition(self) -> UiCaptureDefinition | None:
+        return UiCaptureDefinition(
+            "-",
+            width=self._configuration_set.processing.canvas_width,
+            height=self._configuration_set.processing.canvas_height,
+        )
+
+    @property
+    def frame_overlay(self) -> UiFrameOverlay | None:
+        return None
 
     def on_enter_counting(self):
         self._acquisition_service.thrill_still()
@@ -73,7 +87,7 @@ class JobModelAnimation(JobModelBase[AnimationConfigurationSet]):
 
             _config = SingleImageProcessing(
                 texts_enable=False,
-                img_frame_enable=False,
+                img_frame=FrameOverlay(enable=False),
                 image_filter=merge_definition_capture_only[index].image_filter if index is not None else PluginFilters("original"),
             )
 
@@ -84,7 +98,7 @@ class JobModelAnimation(JobModelBase[AnimationConfigurationSet]):
             )
             phase1_mediaitems.append(mediaitem)
 
-            logger.info(f"capture {mediaitem=} successful")
+            logger.info(f"capture {mediaitem} successful")
 
         assert len(phase1_mediaitems) > 0
 
@@ -97,14 +111,12 @@ class JobModelAnimation(JobModelBase[AnimationConfigurationSet]):
             id=uuid4(),
             job_identifier=self._job_identifier,
             media_type=self._media_type,
-            unprocessed=Path(PATH_UNPROCESSED, original_filenamepath),
             processed=Path(PATH_PROCESSED, original_filenamepath),
             pipeline_config=self._configuration_set.processing.model_dump(mode="json"),
         )
 
         process_and_generate_animation([item.processed for item in phase1_mediaitems], phase2_mediaitem)
 
-        assert phase2_mediaitem.unprocessed.is_file()
         assert phase2_mediaitem.processed.is_file()
 
         # out to db/ui

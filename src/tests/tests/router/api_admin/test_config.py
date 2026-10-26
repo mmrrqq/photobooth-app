@@ -16,8 +16,6 @@ def test_config_endpoints_ui(client_authenticated: TestClient):
 def test_config_getschema(client_authenticated: TestClient):
     response = client_authenticated.get("/admin/config/app/schema")
     assert response.status_code == 200
-    response = client_authenticated.get("/admin/config/app/schema?schema_type=dereferenced")
-    assert response.status_code == 200
 
 
 def test_list_configurable(client_authenticated: TestClient):

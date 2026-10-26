@@ -19,8 +19,7 @@ def api_get_userfiles(filepath: str):
 
         return FileResponse(path=file_out)
     except FileNotFoundError as exc:
-        logger.warning(exc)
-        logger.warning(f"cannot find {filepath}")
+        logger.warning(f"cannot find {filepath}", exc_info=exc)
         raise HTTPException(status_code=404, detail=f"cannot find {filepath}") from exc
     except Exception as exc:
         logger.exception(exc)

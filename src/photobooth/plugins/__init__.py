@@ -149,12 +149,10 @@ pm.add_hookspecs(PluginMediacollectionSpec)
 ENTRY_POINT_GROUP = "photobooth11"  # see pyproject.toml section
 entry_points_app = entry_points(group=ENTRY_POINT_GROUP)
 included_plugins = [importlib.import_module(entry_point.value) for entry_point in entry_points_app]
-print(f"discovered {len(included_plugins)} plugins by entry point group '{ENTRY_POINT_GROUP}':  {[plugin.__name__ for plugin in included_plugins]}")
 
 # user plugins. additionally scan folder below working directlry for quick tinkering
 sys.path.append("./plugins/")
 user_plugins = [importlib.import_module(f"{name}.{name}") for _, name, ispkg in pkgutil.iter_modules(["./plugins/"]) if ispkg]
-print(f"discovered {len(user_plugins)} user-plugins: {[plugin.__name__ for plugin in user_plugins]} in ./plugins/")
 
 # register all plugins
 for discovered_plugin in included_plugins + user_plugins:

@@ -47,6 +47,6 @@ class AppConfig(BaseConfig):
     share: GroupShare = GroupShare()
     mediaprocessing: GroupMediaprocessing = GroupMediaprocessing()
     uisettings: GroupUiSettings = GroupUiSettings()
-    backends: GroupCameras = GroupCameras()
+    cameras: GroupCameras = GroupCameras()
     hardwareinputoutput: GroupHardwareInputOutput = GroupHardwareInputOutput()
     misc: GroupMisc = GroupMisc()

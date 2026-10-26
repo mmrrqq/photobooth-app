@@ -1,7 +1,3 @@
-"""
-pyav webcam implementation backend
-"""
-
 import io
 import logging
 import sys
@@ -10,6 +6,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import av
+import av.codec.context
 import av.error
 from av.codec import Capabilities, Codec
 from av.codec.codec import UnknownCodecError
@@ -64,14 +61,17 @@ class WebcamPyavBackend(AbstractBackend):
     def _device_name_platform(self):
         return f"video={self._config.device_identifier}" if sys.platform == "win32" else f"{self._config.device_identifier}"
 
+    def _handle_switchmode_init(self):
+        pass
+
     def _handle_switchmode_video_mode(self):
-        super()._handle_switchmode_video_mode()
+        pass
 
     def _handle_switchmode_still_mode(self):
-        super()._handle_switchmode_still_mode()
+        pass
 
     def _handle_switchmode_standby(self):
-        super()._handle_switchmode_standby()
+        pass
 
     def setup_resource(self):
         pass
@@ -123,6 +123,9 @@ class WebcamPyavBackend(AbstractBackend):
 
                 continue
 
+            except av.error.ArgumentError as exc:
+                # could be raised during decoding when the camera disconnects - this is not a permanent error then.
+                raise RuntimeError(f"Error decoding camera frame! Error: {exc}") from exc
             except Exception as exc:
                 raise PermanentFault("Error decoding camera frame! Check the camera settings (device name, fps, resolution, ...)") from exc
 
@@ -135,6 +138,9 @@ class WebcamPyavBackend(AbstractBackend):
         try:
             return packet.decode()[0]
 
+        except av.error.ArgumentError as exc:
+            # could be raised during decoding when the camera disconnects - this is not a permanent error then.
+            raise RuntimeError(f"Error decoding camera frame! Error: {exc}") from exc
         except Exception as exc:
             del packet
             raise PermanentFault("Error decoding camera frame! Ensure the settings are correct (device name, fps, resolution, ...)") from exc
@@ -180,7 +186,7 @@ class WebcamPyavBackend(AbstractBackend):
 
             with input_device:
                 input_stream = input_device.streams.video[0]
-                input_stream.thread_type = "AUTO"  # speed up processing
+                input_stream.thread_type = av.codec.context.ThreadType.AUTO  # speed up processing
                 input_stream.thread_count = 0  # speed up processing
                 codec_name = input_stream.codec.name
 

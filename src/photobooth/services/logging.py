@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from datetime import datetime
-from logging import FileHandler, LogRecord
 from pathlib import Path
 
 from .. import LOG_PATH
@@ -30,7 +29,7 @@ class EventstreamLogHandler(logging.Handler):
     def __init__(self):
         logging.Handler.__init__(self)
 
-    def emit(self, record: LogRecord):
+    def emit(self, record: logging.LogRecord):
         sse_logrecord = SseEventLogRecord(
             time=datetime.fromtimestamp(record.created).strftime("%d.%b.%y %H:%M:%S"),
             level=record.levelname,
@@ -104,7 +103,7 @@ class LoggingService(BaseService):
                 stream_handler.setFormatter(ConsoleColorFormatter())
                 break
 
-        self.file_handler = FileHandler(filename=logfile, mode="a", encoding="utf-8", delay=True)
+        self.file_handler = logging.FileHandler(filename=logfile, mode="a", encoding="utf-8", delay=True)
         self.file_handler.setFormatter(log_formatter)
 
         # create rotatingFileHandler
@@ -149,6 +148,7 @@ class LoggingService(BaseService):
         """mute some logger by rasing their log level"""
 
         for name in [
+            "picamera2",
             "picamera2.picamera2",
             "sse_starlette.sse",
             "PIL",
@@ -169,8 +169,8 @@ class LoggingService(BaseService):
             "pywifi",
             "v4l2py",
             "linuxpy",
-            "httpcore",  # nextcloud
-            "httpx",  # nextcloud
+            "httpcore2",
+            "httpx2",
         ]:
             # mute some other logger, by raising their debug level to INFO
             lgr = logging.getLogger(name=name)

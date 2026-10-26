@@ -4,20 +4,22 @@ from uuid import uuid4
 
 from statemachine import Event
 
-from ... import PATH_PROCESSED, PATH_UNPROCESSED
-from ...database.models import Mediaitem, MediaitemTypes
+from ... import PATH_PROCESSED
+from ...database.models import Mediaitem
 from ...utils.helper import filename_str_time
 from ..acquisition import AcquisitionService
 from ..config.groups.actions import CollageConfigurationSet, SingleImageProcessing
+from ..config.models.frameoverlay import FrameOverlay
 from ..config.models.models import PluginFilters
 from ..mediaprocessing.processes import process_and_generate_collage
-from .base import Capture, CaptureSet, JobModelBase
+from .base import JobModelBase
+from .models import Capture, CaptureSet, UiCaptureDefinition, UiFrameOverlay
 
 logger = logging.getLogger(__name__)
 
 
 class JobModelCollage(JobModelBase[CollageConfigurationSet]):
-    _media_type = MediaitemTypes.collage
+    _media_type = "collage"
 
     def __init__(self, configuration_set: CollageConfigurationSet, acquisition_service: AcquisitionService):
         super().__init__(configuration_set, acquisition_service=acquisition_service)
@@ -27,6 +29,20 @@ class JobModelCollage(JobModelBase[CollageConfigurationSet]):
     @property
     def total_captures_to_take(self) -> int:
         return self._get_number_of_captures_from_merge_definition(self._configuration_set.processing.merge_definition)
+
+    @property
+    def captures_definition(self) -> UiCaptureDefinition | None:
+        cds = [cd for cd in self._configuration_set.processing.merge_definition if not cd.predefined_image]
+        try:
+            cd = cds[self.captures_taken]
+        except IndexError:
+            return None
+
+        return UiCaptureDefinition(cd.description, width=cd.width, height=cd.height)
+
+    @property
+    def frame_overlay(self) -> UiFrameOverlay | None:
+        return None
 
     def on_enter_counting(self):
         self._acquisition_service.thrill_still()
@@ -38,8 +54,17 @@ class JobModelCollage(JobModelBase[CollageConfigurationSet]):
 
     def on_enter_capture(self):
         logger.info(f"current capture ({self.captures_taken + 1}/{self.total_captures_to_take}, remaining {self.remaining_captures_to_take - 1})")
+        assert self.captures_definition
 
-        captureset = CaptureSet([Capture(self._acquisition_service.wait_for_still_file())])
+        captureset = CaptureSet(
+            [
+                Capture(
+                    self._acquisition_service.wait_for_still_file(),
+                    target_width=self.captures_definition.width,
+                    target_height=self.captures_definition.height,
+                ),
+            ]
+        )
 
         # add to tmp collection
         # update model so it knows the latest number of captures and the machine can react accordingly if finished
@@ -77,7 +102,7 @@ class JobModelCollage(JobModelBase[CollageConfigurationSet]):
                 img_background_enable=self._configuration_set.processing.capture_img_background_enable,
                 img_background_file=self._configuration_set.processing.capture_img_background_file,
                 texts_enable=False,
-                img_frame_enable=False,
+                img_frame=FrameOverlay(enable=False),
                 image_filter=merge_definition_capture_only[index].image_filter if index is not None else PluginFilters("original"),
             )
 
@@ -101,14 +126,12 @@ class JobModelCollage(JobModelBase[CollageConfigurationSet]):
             id=uuid4(),
             job_identifier=self._job_identifier,
             media_type=self._media_type,
-            unprocessed=Path(PATH_UNPROCESSED, original_filenamepath),
             processed=Path(PATH_PROCESSED, original_filenamepath),
             pipeline_config=self._configuration_set.processing.model_dump(mode="json"),
         )
 
         process_and_generate_collage([item.processed for item in phase1_mediaitems], phase2_mediaitem)
 
-        assert phase2_mediaitem.unprocessed.is_file()
         assert phase2_mediaitem.processed.is_file()
 
         # out to db/ui

@@ -29,9 +29,8 @@ class MediaitemPublic(BaseModel):
     id: uuid.UUID
     media_type: MediaitemTypes
     created_at: datetime
-    updated_at: datetime
+    revision: int
 
-    unprocessed: Path
     processed: Path
 
     show_in_gallery: bool

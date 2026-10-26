@@ -17,10 +17,11 @@ from .collection import MediacollectionService
 from .config.groups.actions import MultiImageJobControl
 from .information import InformationService
 from .processor.animation import JobModelAnimation
-from .processor.base import Capture, JobModelBase
+from .processor.base import JobModelBase
 from .processor.collage import JobModelCollage
 from .processor.image import JobModelImage
 from .processor.machine.processingmachine import ProcessingMachine, userEvents
+from .processor.models import Capture
 from .processor.multicamera import JobModelMulticamera
 from .processor.video import JobModelVideo
 from .sse import sse_service
@@ -77,15 +78,15 @@ class PluginEventHooks:
 class FrontendNotifierEventHooks:
     emit_before_transition_to_target = (ProcessingMachine.completed,)  # emit before processing to allow UI show processing on target=completed
 
-    def before_transition(self, source: State, target: State, model):
+    def before_transition(self, source: State, target: State, model: JobModelType):
         if target in self.emit_before_transition_to_target:
             # logger.info(f"send frontend notification {source=} {target=}") # might uncomment during debugging only
-            sse_service.dispatch_event(SseEventProcessStateinfo(source=source, target=target, jobmodel=model))
+            sse_service.dispatch_event(SseEventProcessStateinfo(source=source.id, target=target.id, jobmodel=model.export()))
 
-    def after_transition(self, source: State, target: State, model):
+    def after_transition(self, source: State, target: State, model: JobModelType):
         if target not in self.emit_before_transition_to_target:
             # logger.info(f"send frontend notification {source=} {target=}") # might uncomment during debugging only
-            sse_service.dispatch_event(SseEventProcessStateinfo(source=source, target=target, jobmodel=model))
+            sse_service.dispatch_event(SseEventProcessStateinfo(source=source.id, target=target.id, jobmodel=model.export()))
 
 
 class ProcessingService(BaseService):
@@ -175,12 +176,11 @@ class ProcessingService(BaseService):
                     self._workflow_jobmodel._status_sm.send("next")
 
         except Exception as exc:
-            logger.exception(exc)
-            logger.error(f"the job failed, error: {exc}")
+            logger.error(f"the job failed, error: {exc}", exc_info=exc)
 
             # Error processing the job 😔 Please try again. Check the logs if the error is permanent!
             sse_service.dispatch_event(SseEventTranslateableFrontendNotification(color="negative", message_key="processing.job_failed"))
-            sse_service.dispatch_event(SseEventProcessStateinfo(None, None, None))
+            sse_service.dispatch_event(SseEventProcessStateinfo(source=None, target=None, jobmodel=None))
 
         finally:
             self._workflow_jobmodel = None
@@ -192,7 +192,7 @@ class ProcessingService(BaseService):
         if self._workflow_jobmodel:
             source = next(iter(self._workflow_jobmodel._status_sm.configuration))
             target = next(iter(self._workflow_jobmodel._status_sm.configuration))
-            sse_service.dispatch_event(SseEventProcessStateinfo(source, target, self._workflow_jobmodel))
+            sse_service.dispatch_event(SseEventProcessStateinfo(source=source.id, target=target.id, jobmodel=self._workflow_jobmodel.export()))
 
     def trigger_action(self, action_type: ActionType, action_index: int = 0):
         ## preflight checks

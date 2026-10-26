@@ -6,7 +6,6 @@ from fastapi.exceptions import RequestValidationError
 from pydantic_core import ValidationError
 
 from ...container import container
-from ...services.config.baseconfig import SchemaTypes
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/config", tags=["admin", "config"])
@@ -28,8 +27,8 @@ def api_reset_config(configurable: str):
 
 
 @router.get("/{configurable}/schema")
-def api_get_config_schema(configurable: str, schema_type: SchemaTypes = "default"):
-    return container.config_service.get_schema(configurable, schema_type)
+def api_get_config_schema(configurable: str):
+    return container.config_service.get_schema(configurable)
 
 
 @router.get("/{configurable}")

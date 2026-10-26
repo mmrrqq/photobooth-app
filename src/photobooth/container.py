@@ -51,8 +51,7 @@ class Container:
                     services_started.append(f"{service.__class__.__name__}: {service.get_status().name}")
 
                 except Exception as exc:
-                    logger.exception(exc)
-                    logger.critical("could not start service")
+                    logger.critical("could not start service", exc_info=exc)
 
             self._container_started = True
 
@@ -72,8 +71,7 @@ class Container:
 
                     services_stopped.append(f"{service.__class__.__name__}: {service.get_status().name}")
                 except Exception as exc:
-                    logger.exception(exc)
-                    logger.critical("could not stop service")
+                    logger.critical("could not stop service", exc_info=exc)
 
             self._container_started = False
 

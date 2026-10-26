@@ -20,76 +20,92 @@ router = APIRouter(prefix="/aquisition", tags=["aquisition"])
 
 @router.websocket("/stream")
 async def websocket_endpoint(websocket: WebSocket, index_device: int | None = None, index_subdevice: int = 0):
-    if not appconfig.backends.enable_livestream:
+    retries = 3
+
+    if not appconfig.cameras.enable_livestream:
         raise HTTPException(status.HTTP_405_METHOD_NOT_ALLOWED, "preview not enabled")
 
     await websocket.accept()
 
-    retries = 3
-
-    while True:
-        try:
-            msg = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-
-        except WebSocketDisconnect:
-            logger.debug("client disconnected while waiting for the ready signal to send the next frame")
-            return  # return because disconnected already and below would handle disconnect otherwise again which fails for sure.
-        except TimeoutError:
-            # logger.debug("timed out while waiting for the ready signal to send the next frame, continue waiting...")
-            continue
-
-        if msg != "ready":
-            logger.warning(f"invalid message from client: {msg}")
-            continue
-
-        jpeg_bytes = None
+    async def acquire_frame_with_retries() -> bytes | None:
+        jpeg_bytes: bytes | None = None
 
         for attempt in range(retries):
             try:
                 jpeg_bytes = await asyncio.to_thread(container.acquisition_service.wait_for_lores_image, index_device, index_subdevice)
-                break  # success, don't execute for...else:
-
+                return jpeg_bytes  # success
             except TimeoutError:  # backend timeout (mode switching, ...)
-                logger.debug(f"camera timeout ({attempt + 1}/{retries})")
+                logger.debug(f"camera livestream timeout ({attempt + 1}/{retries})")
                 continue  # retry
             except BackendNotRunning:
                 logger.info("backend stopped, closing stream")
-
                 await websocket.close(code=1001, reason="backend stopped")
-                return  # stop
+                return None
             except Exception as exc:
                 logger.error(exc)
-                continue  # retry, but likely to fail and then exchaust the retry loop crit
-        else:
-            # retry loop exhausted
+                continue  # retry, but likely to fail and then exhaust the retry loop crit
+
+        if jpeg_bytes is None:
             logger.error("failed to get frame after max retries, closing stream")
             sse_service.dispatch_event(SseEventTranslateableFrontendNotification(color="negative", message_key="acquisition.stream_error"))
-
             await websocket.close(code=1011, reason="camera failed")
+            return None
+
+    # --- send first frame immediately after connect ---
+    first_frame = await acquire_frame_with_retries()
+    if first_frame is None:
+        # acquire_frame_with_retries already closed + logged
+        return
+
+    try:
+        await websocket.send_bytes(first_frame)
+    except WebSocketDisconnect:
+        logger.debug("client disconnected while sending first frame")
+        return
+    except Exception as exc:
+        logger.info(f"error sending first frame: {exc}")
+        await websocket.close(code=1011, reason="send failed")
+        return
+
+    # --- normal ready → acquire → send loop ---
+    while True:
+        # wait for ready
+        try:
+            msg = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            if msg != "ready":
+                logger.warning(f"invalid message from client: {msg}")
+                continue
+        except WebSocketDisconnect:
+            logger.debug("client disconnected while waiting for ready signal")
+            return
+        except TimeoutError:
+            logger.debug("timed out while waiting for the ready signal from the client, continue waiting...")
+            continue
+        except BackendNotRunning:
+            logger.info("backend stopped, closing stream")
+            await websocket.close(code=1001, reason="backend stopped")
             return
 
-        # print(time.monotonic())
+        # acquire next frame with same retry semantics
+        jpeg_bytes = await acquire_frame_with_retries()
+        if jpeg_bytes is None:
+            # helper already closed + logged
+            return
 
-        if jpeg_bytes:
-            try:
-                await websocket.send_bytes(jpeg_bytes)
-            except WebSocketDisconnect:
-                logger.debug("client disconnected while sending a frame")
-                return  # return because disconnected already and below would handle disconnect otherwise again which fails for sure.
-            except Exception as exc:
-                logger.info(f"error sending data: {exc}")
-                break
-
-    # when while ends, close the connection server side so client can retry connecting)
-    try:
-        await websocket.close(code=1001, reason="backend stopped delivering")
-    except Exception as exc:
-        logger.warning(f"websocket failed closing: {exc}")
+        # send frame
+        try:
+            await websocket.send_bytes(jpeg_bytes)
+        except WebSocketDisconnect:
+            logger.debug("client disconnected while sending a frame")
+            return
+        except Exception as exc:
+            logger.info(f"error sending data: {exc}")
+            await websocket.close(code=1011, reason="send failed")
 
 
 @router.get("/stream.mjpg")
 def video_stream(index_device: int = 0, index_subdevice: int = 0):
-    if not appconfig.backends.enable_livestream:
+    if not appconfig.cameras.enable_livestream:
         raise HTTPException(status.HTTP_405_METHOD_NOT_ALLOWED, "preview not enabled")
 
     def gen_multipart():

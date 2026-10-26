@@ -18,7 +18,7 @@ from photobooth.services.config.groups.hardwareinputoutput import GroupHardwareI
 from ..appconfig import appconfig
 from .base import BaseService
 from .collection import MediacollectionService
-from .config.models.trigger import GpioTrigger, triggerType
+from .config.models.trigger import triggerType
 from .processing import ActionType, ProcessingService
 from .share import ShareService
 
@@ -186,14 +186,14 @@ class GpioService(BaseService):
 
         for action_type in get_args(ActionType):
             for index, config in enumerate(getattr(appconfig.actions, action_type)):  # here is a typing dissociation, might be addressed later...
-                gpio_trigger: GpioTrigger = config.trigger.gpio_trigger
+                gpio_trigger = config.trigger.gpio_trigger
 
                 action_btn = PinHandler(gpio_trigger.pin, hold_time=0.6)
                 if action_btn:
                     action_btn.register_callback(gpio_trigger.trigger_on, self._handle_action_button, action_type, index)
 
         for index, config in enumerate(appconfig.share.actions):
-            gpio_trigger: GpioTrigger = config.trigger.gpio_trigger
+            gpio_trigger = config.trigger.gpio_trigger
 
             share_btn = PinHandler(gpio_trigger.pin, hold_time=0.6)
             if share_btn:
@@ -226,8 +226,7 @@ class GpioService(BaseService):
             # use separate exception without log actual exception because it looks like everything is breaking apart but only gpio is not supported.
             logger.warning("GPIOzero is enabled but could not find a supported pin factory. Hardware is not supported.")
         except Exception as exc:
-            logger.exception(exc)
-            logger.error(f"init_io failed, GPIO might behave erratic, error: {exc}")
+            logger.error(f"init_io failed, GPIO might behave erratic, error: {exc}", exc_info=exc)
 
         logger.info("gpio enabled - listeners installed")
 

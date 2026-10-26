@@ -8,7 +8,6 @@ import requests
 from pydantic import HttpUrl
 from statemachine import Event, State
 
-from photobooth.database.types import MediaitemTypes
 from photobooth.plugins.commander.commander import Commander
 from photobooth.plugins.commander.config import CommanderConfig
 from photobooth.plugins.commander.models import HttpRequestParameters, TaskCommand, TaskHttpRequest
@@ -46,7 +45,7 @@ def commander_plugin():
         tasks_commands=[
             TaskCommand(command="echo this echoed on event {event}!"),
             TaskCommand(command="echo this echoed on event {event}!", wait_until_completed=True),
-            TaskCommand(command="echo this echoed on event {event}!", filter_mediaitem_types=[MediaitemTypes.video]),
+            TaskCommand(command="echo this echoed on event {event}!", filter_mediaitem_types=["video"]),
         ],
     )
 
@@ -73,22 +72,22 @@ def test_stop(commander_plugin: Commander):
 
 def test_sm_on_enter_state(commander_plugin: Commander):
     with patch.object(commander_plugin, "run_task") as mock_run_task:
-        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.counting, Event(), MediaitemTypes.image)
-        mock_run_task.assert_called_once_with("counting", MediaitemTypes.image)
+        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.counting, Event(), "image")
+        mock_run_task.assert_called_once_with("counting", "image")
 
     with patch.object(commander_plugin, "run_task") as mock_run_task:
-        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.finished, Event(), MediaitemTypes.image)
-        mock_run_task.assert_called_once_with("finished", MediaitemTypes.image)
+        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.finished, Event(), "image")
+        mock_run_task.assert_called_once_with("finished", "image")
 
     with patch.object(commander_plugin, "run_task") as mock_run_task:
-        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.capture, Event(), MediaitemTypes.image)
-        mock_run_task.assert_called_once_with("capture", MediaitemTypes.image)
+        commander_plugin.sm_on_enter_state(State(), ProcessingMachine.capture, Event(), "image")
+        mock_run_task.assert_called_once_with("capture", "image")
 
 
 def test_sm_on_exit_state(commander_plugin: Commander):
     with patch.object(commander_plugin, "run_task") as mock_run_task:
-        commander_plugin.sm_on_exit_state(ProcessingMachine.capture, State(), Event(), MediaitemTypes.image)
-        mock_run_task.assert_called_once_with("captured", MediaitemTypes.image)
+        commander_plugin.sm_on_exit_state(ProcessingMachine.capture, State(), Event(), "image")
+        mock_run_task.assert_called_once_with("captured", "image")
 
 
 def test_run_task(commander_plugin: Commander):
@@ -103,20 +102,20 @@ def test_run_task(commander_plugin: Commander):
 def test_run_task_filtered(commander_plugin: Commander):
     with patch.object(commander_plugin, "invoke_command") as mock_invoke_command:
         with patch.object(commander_plugin, "invoke_httprequest") as mock_invoke_httprequest:
-            commander_plugin.run_task("finished", MediaitemTypes.video)
+            commander_plugin.run_task("finished", "video")
 
             assert mock_invoke_command.call_count == len(
                 [
                     cmd
                     for cmd in commander_plugin._config.tasks_commands
-                    if cmd.enabled is True and (not cmd.filter_mediaitem_types or MediaitemTypes.video in cmd.filter_mediaitem_types)
+                    if cmd.enabled is True and (not cmd.filter_mediaitem_types or "video" in cmd.filter_mediaitem_types)
                 ]
             )
             assert mock_invoke_httprequest.call_count == len(
                 [
                     req
                     for req in commander_plugin._config.tasks_httprequests
-                    if req.enabled is True and (not req.filter_mediaitem_types or MediaitemTypes.video in req.filter_mediaitem_types)
+                    if req.enabled is True and (not req.filter_mediaitem_types or "video" in req.filter_mediaitem_types)
                 ]
             )
 

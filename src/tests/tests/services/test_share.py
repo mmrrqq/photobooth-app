@@ -9,7 +9,6 @@ import pytest
 from photobooth.appconfig import appconfig
 from photobooth.container import Container, container
 from photobooth.database.models import Mediaitem
-from photobooth.database.types import MediaitemTypes
 from photobooth.services.config.groups.share import ShareConfigurationSet, ShareProcessing
 from photobooth.services.config.models.trigger import Trigger
 from photobooth.utils.exceptions import WrongMediaTypeError
@@ -69,7 +68,7 @@ def test_print_service_disabled(mock_run, _container: Container):
     appconfig.share.sharing_enabled = False
 
     with pytest.raises(ConnectionRefusedError):
-        _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 0)
+        _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 0)
 
     assert mock_run.assert_not_called
 
@@ -78,7 +77,7 @@ def test_print_service_disabled(mock_run, _container: Container):
 def test_print_image(mock_run, _container: Container):
     """enable service and try to print"""
 
-    _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 0)
+    _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 0)
 
     # check subprocess.run was invoked
     mock_run.assert_called_once()
@@ -89,13 +88,13 @@ def test_print_image_blocked(mock_run, _container: Container):
     """enable service and try to print, check that it repsonds blocking correctly"""
 
     # two prints issued
-    _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 1)
+    _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 1)
     time.sleep(2.5)
 
-    _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 1)
+    _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 1)
     time.sleep(1)
     with pytest.raises(BlockingIOError):
-        _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 1)
+        _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 1)
 
     # check subprocess.run was invoked
     assert mock_run.call_count == 2
@@ -110,9 +109,7 @@ def test_is_limited_exceeded(mock_run, _container: Container):
         _container.share_service.limit_counter_increment(appconfig.share.actions[test_action_index].name)
 
     with pytest.raises(BlockingIOError):
-        _container.share_service.share(
-            Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), test_action_index
-        )
+        _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), test_action_index)
 
     # command was not called, means quota exceeded.
     assert mock_run.assert_not_called
@@ -124,22 +121,22 @@ def test_print_wrong_mediatype_raises(mock_run, _container: Container):
 
     # video fails for images only action
     with pytest.raises(WrongMediaTypeError):
-        _container.share_service.share(Mediaitem(media_type=MediaitemTypes.video, unprocessed=Path("1.mp4"), processed=Path("1.mp4")), 3)
+        _container.share_service.share(Mediaitem(media_type="video", processed=Path("1.mp4")), 3)
     # animation
     with pytest.raises(WrongMediaTypeError):
-        _container.share_service.share(Mediaitem(media_type=MediaitemTypes.animation, unprocessed=Path("1.gif"), processed=Path("1.gif")), 3)
+        _container.share_service.share(Mediaitem(media_type="animation", processed=Path("1.gif")), 3)
     # multicamera
     with pytest.raises(WrongMediaTypeError):
-        _container.share_service.share(Mediaitem(media_type=MediaitemTypes.multicamera, unprocessed=Path("1.gif"), processed=Path("1.gif")), 3)
+        _container.share_service.share(Mediaitem(media_type="multicamera", processed=Path("1.gif")), 3)
 
     # check subprocess.run was not invoked
     assert mock_run.call_count == 0
 
     # image
-    _container.share_service.share(Mediaitem(media_type=MediaitemTypes.image, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 3)
+    _container.share_service.share(Mediaitem(media_type="image", processed=Path("1.jpg")), 3)
 
     # collage
-    _container.share_service.share(Mediaitem(media_type=MediaitemTypes.collage, unprocessed=Path("1.jpg"), processed=Path("1.jpg")), 3)
+    _container.share_service.share(Mediaitem(media_type="collage", processed=Path("1.jpg")), 3)
 
     # check subprocess.run was not invoked
     assert mock_run.call_count == 2

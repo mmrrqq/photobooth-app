@@ -2,6 +2,7 @@ import logging
 from subprocess import PIPE, Popen
 
 import av
+import av.codec.context
 import pytest
 
 from photobooth.appconfig import appconfig
@@ -29,7 +30,7 @@ def process_pyav(tmp_path):
     stream.height = frame_input.height
     # stream.pix_fmt = "yuv420p"
     stream.codec_context.options["preset"] = "veryfast"
-    stream.codec_context.thread_type = "AUTO"
+    stream.codec_context.thread_type = av.codec.context.ThreadType.AUTO
     stream.codec_context.thread_count = 0  # let FFmpeg decide
     # stream.codec_context.options["tune"] = "zerolatency"
     # stream.codec_context.profile = "Main"

@@ -31,7 +31,7 @@ class U2netSession(BaseSession):
         pred = np.squeeze(pred)
 
         mask = Image.fromarray((pred.clip(0, 1) * 255).astype("uint8"))
-        mask = mask.resize(img.size, Image.Resampling.LANCZOS)
+        mask = mask.resize(img.size, Image.Resampling.BICUBIC)
 
         return mask
 

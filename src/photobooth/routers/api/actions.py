@@ -20,6 +20,5 @@ def api_trigger_model(action_type: ActionType, index: int = 0):
         raise HTTPException(status_code=400, detail=f"only one capture at a time allowed: {exc}") from exc
     except Exception as exc:
         # other errors
-        logger.exception(exc)
-        logger.critical(exc)
+        logger.critical(exc, exc_info=exc)
         raise HTTPException(status_code=500, detail=f"something went wrong, Exception: {exc}") from exc

@@ -57,8 +57,6 @@ async def lifespan(_: FastAPI):
 
 
 def _create_app() -> FastAPI:
-    container.logging_service.start()
-
     _app = FastAPI(
         title="Photobooth-App API",
         description="API may change any time.",

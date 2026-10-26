@@ -4,20 +4,21 @@ from uuid import uuid4
 
 from statemachine import Event
 
-from ... import PATH_PROCESSED, PATH_UNPROCESSED
+from ... import PATH_PROCESSED
 from ...appconfig import appconfig
-from ...database.models import Mediaitem, MediaitemTypes
+from ...database.models import Mediaitem
 from ...utils.helper import filename_str_time
 from ..acquisition import AcquisitionService
 from ..config.groups.actions import MulticameraConfigurationSet, SingleImageProcessing
 from ..mediaprocessing.processes import process_and_generate_wigglegram
-from .base import Capture, CaptureSet, JobModelBase
+from .base import JobModelBase
+from .models import Capture, CaptureSet, UiFrameOverlay
 
 logger = logging.getLogger(__name__)
 
 
 class JobModelMulticamera(JobModelBase[MulticameraConfigurationSet]):
-    _media_type = MediaitemTypes.multicamera
+    _media_type = "multicamera"
 
     def __init__(self, configuration_set: MulticameraConfigurationSet, acquisition_service: AcquisitionService):
         super().__init__(configuration_set, acquisition_service=acquisition_service)
@@ -25,6 +26,14 @@ class JobModelMulticamera(JobModelBase[MulticameraConfigurationSet]):
     @property
     def total_captures_to_take(self) -> int:
         return 1
+
+    @property
+    def captures_definition(self):
+        return None
+
+    @property
+    def frame_overlay(self) -> UiFrameOverlay | None:
+        return None
 
     def on_enter_counting(self):
         self._acquisition_service.thrill_multicam()
@@ -84,14 +93,12 @@ class JobModelMulticamera(JobModelBase[MulticameraConfigurationSet]):
             id=uuid4(),
             job_identifier=self._job_identifier,
             media_type=self._media_type,
-            unprocessed=Path(PATH_UNPROCESSED, original_filenamepath),
             processed=Path(PATH_PROCESSED, original_filenamepath),
             pipeline_config=self._configuration_set.processing.model_dump(mode="json"),
         )
 
         process_and_generate_wigglegram([item.processed for item in phase1_mediaitems], phase2_mediaitem)
 
-        assert phase2_mediaitem.unprocessed.is_file()
         assert phase2_mediaitem.processed.is_file()
 
         # out to db/ui

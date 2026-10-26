@@ -1,9 +1,13 @@
 import logging
 import threading
+import traceback
 from abc import ABC, abstractmethod
 from time import time
 
 logger = logging.getLogger(__name__)
+
+
+APP_PACKAGE = "photobooth"
 
 
 class PermanentFault(Exception):
@@ -20,8 +24,36 @@ class ServiceCrashedPermanently(Exception):
     can be raised from within service logic"""
 
 
+class CrashReporter(ABC):
+    def __init__(self, service_name: str):
+        self.service_name = service_name
+
+    @abstractmethod
+    def report(self, exc: Exception): ...
+
+
+class VerboseCrashReporter(CrashReporter):
+    def report(self, exc: Exception):
+        tb = traceback.extract_tb(exc.__traceback__)
+        origin = tb[1] if len(tb) > 1 else tb[0]
+        logger.error(f"service {self.service_name} interrupted at {origin.filename}:{origin.lineno}, error: {exc}", exc_info=exc)
+
+
+class QuietCrashReporter(CrashReporter):
+    def report(self, exc: Exception):
+        tb = traceback.extract_tb(exc.__traceback__)
+        origin = tb[1] if len(tb) > 1 else tb[0]
+
+        logger.info(f"service {self.service_name} interrupted at {origin.filename}:{origin.lineno}, error: {exc}")
+
+
 class ResilientService(ABC):
-    def __init__(self, retry_delay: int | float = 2, max_backoff: int | float = 20):
+    def __init__(
+        self,
+        retry_delay: int | float = 2,
+        max_backoff: int | float = 20,
+        crash_reporter: CrashReporter | None = None,
+    ):
         super().__init__()
         self._lock = threading.Lock()
         self._started = False
@@ -31,6 +63,8 @@ class ResilientService(ABC):
         self._retry_delay = retry_delay
         self._max_backoff = max_backoff
         self._last_crash: float | None = None
+
+        self._crash_reporter = crash_reporter or VerboseCrashReporter(self.__class__.__name__)
 
     # ---- Subclass Overrides ----
     @abstractmethod
@@ -48,8 +82,7 @@ class ResilientService(ABC):
     # ----------------------------
 
     def _report_crash(self, exc: Exception):
-        logger.exception(exc)
-        logger.critical(f"service crashed, error: {exc}")
+        self._crash_reporter.report(exc)
 
     def _run(self):
         attempt = 0
@@ -129,7 +162,7 @@ class ResilientService(ABC):
             logger.debug(f"{self}-resilient service starting")
 
             self._stop_event.clear()
-            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread = threading.Thread(name=self.__class__.__name__, target=self._run, daemon=True)
             self._thread.start()
             self._started = True
 
@@ -158,7 +191,7 @@ class ResilientService(ABC):
                 self._thread.join()
 
             self._stop_event.clear()
-            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread = threading.Thread(name=self.__class__.__name__, target=self._run, daemon=True)
             self._thread.start()
 
     def is_started(self):

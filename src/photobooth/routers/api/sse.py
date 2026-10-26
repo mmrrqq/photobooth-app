@@ -8,13 +8,35 @@ from sse_starlette.sse import EventSourceResponse
 
 from ...container import container
 from ...services.sse import sse_service
-from ...services.sse.sse_ import Client
+from ...services.sse.sse_ import (
+    Client,
+    SseEventDbInsert,
+    SseEventDbRemove,
+    SseEventDbUpdate,
+    SseEventIntervalInformationRecord,
+    SseEventLogRecord,
+    SseEventOnetimeInformationRecord,
+    SseEventProcessStateinfo,
+    SseEventTranslateableFrontendNotification,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["home"])
 
 
-@router.get("/sse")
+SseEventModel = (
+    SseEventTranslateableFrontendNotification
+    | SseEventProcessStateinfo
+    | SseEventDbInsert
+    | SseEventDbUpdate
+    | SseEventDbRemove
+    | SseEventLogRecord
+    | SseEventOnetimeInformationRecord
+    | SseEventIntervalInformationRecord
+)  # used to include in the api doc for typescript-opentype generator use in client.
+
+
+@router.get("/sse", response_model=SseEventModel)
 async def subscribe(request: Request):
     """
     Eventstream to feed clients with server generated events and data

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import time
 from collections import OrderedDict
 from datetime import datetime
 from enum import Enum
@@ -10,11 +9,13 @@ from itertools import chain
 from pathlib import Path
 from threading import Lock
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic_extra_types.color import Color
 
 from ....plugins import pm
 from ....utils.exceptions import PipelineError
+from ....utils.metrics_timer import MetricsTimer
 from ....utils.rembg.rembg import remove
 from ....utils.rembg.session_factory import new_session
 from ....utils.rembg.sessions.base import BaseSession
@@ -110,7 +111,7 @@ class ImageMountStep(PipelineStep):
         background_img_adjusted = ImageOps.fit(
             background_img,
             context.image.size,
-            method=Image.Resampling.LANCZOS,
+            method=Image.Resampling.BICUBIC,
         )
 
         # paste the actual image to the background
@@ -140,6 +141,7 @@ class ImageFrameStep(PipelineStep):
 
     def __call__(self, context: ImageContext, next_step: NextStep) -> None:
         # check frame is avail, otherwise send pipelineerror
+
         try:
             frame_path = self.frame_file
             # convert to rgba because there could be paletted PNGs in mode P but still with alpha in info.transparency.
@@ -150,7 +152,12 @@ class ImageFrameStep(PipelineStep):
 
         try:
             # detect boundary box of transparent area, for this get alphachannel, invert and getbbox:
-            transparent_xy = ImageOps.invert(image_frame.getchannel("A")).getbbox()  # getchannel A returns img mode 'L'
+            alpha = image_frame.getchannel("A")
+            mask_np = (np.asarray(alpha) < 255).astype(np.uint8) * 255  # Maske erzeugen: 255 für transparent, 0 für opaque
+            mask = Image.fromarray(mask_np, mode="L")
+
+            transparent_xy = mask.getbbox()
+
         except Exception as exc:  # no transparent channel A
             raise PipelineError(f"error processing image, cannot apply stage, error {exc}") from exc
 
@@ -162,7 +169,7 @@ class ImageFrameStep(PipelineStep):
         logger.info(f"detected transparent area {transparent_xy=}, {transparent_size=}")
 
         # create a fitted version of input image (captured) that will cover-fit the transparent area
-        image_fitted = ImageOps.fit(context.image, transparent_size, method=Image.Resampling.LANCZOS)
+        image_fitted = ImageOps.fit(context.image, transparent_size, method=Image.Resampling.BICUBIC)
 
         # create new image
         result_image = Image.new("RGBA", image_frame.size)  # with alpha channel of same size as frame image
@@ -237,11 +244,8 @@ class RemovebgStep(PipelineStep):
                 REMOVE_CACHE.move_to_end(key)
                 return REMOVE_CACHE[key]
 
-            tms = time.monotonic()
-            result = remove(img=img, session=session)
-            tme = time.monotonic()
-
-            logger.info(f"remove background using AI duration took {tme - tms:0.3}s")
+            with MetricsTimer(f"background removal using AI model '{self.model_name}'"):
+                result = remove(img=img, session=session)
 
             REMOVE_CACHE[key] = result
             REMOVE_CACHE.move_to_end(key)

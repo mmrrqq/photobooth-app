@@ -42,9 +42,9 @@ def test_capture(_container: Container):
     assert _container.processing_service._workflow_jobmodel is None
 
     phase2_item = _container.mediacollection_service.get_item_latest()
-    assert phase2_item.unprocessed.suffix.lower() == ".jpg"
+    assert phase2_item.processed.suffix.lower() == ".jpg"
 
-    with Image.open(phase2_item.unprocessed, formats=["JPEG"]) as img:
+    with Image.open(phase2_item.processed, formats=["JPEG"]) as img:
         img.verify()
 
 
@@ -73,9 +73,9 @@ def test_collage_auto_approval(_container: Container):
     assert _container.processing_service._workflow_jobmodel is None
 
     phase2_item = _container.mediacollection_service.get_item_latest()
-    assert phase2_item.unprocessed.suffix.lower() == ".jpg"
+    assert phase2_item.processed.suffix.lower() == ".jpg"
 
-    with Image.open(phase2_item.unprocessed, formats=["JPEG"]) as img:
+    with Image.open(phase2_item.processed, formats=["JPEG"]) as img:
         img.verify()
 
 
@@ -138,9 +138,9 @@ def test_animation(_container: Container):
     assert _container.processing_service._workflow_jobmodel is None
 
     phase2_item = _container.mediacollection_service.get_item_latest()
-    assert phase2_item.unprocessed.suffix.lower() in (".gif", ".avif", ".webp")
+    assert phase2_item.processed.suffix.lower() in (".gif", ".avif", ".webp")
 
-    with Image.open(phase2_item.unprocessed, formats=["GIF", "AVIF", "WEBP"]) as img:
+    with Image.open(phase2_item.processed, formats=["GIF", "AVIF", "WEBP"]) as img:
         img.verify()
 
 
@@ -156,13 +156,15 @@ def test_video(_container: Container):
     assert _container.mediacollection_service.count() == number_of_images_before + 1
 
     video_item = _container.mediacollection_service.get_item_latest()
-    assert video_item.unprocessed.suffix.lower() == ".mp4"
+    assert video_item.processed.suffix.lower() == ".mp4"
 
     # boomerang reverses video so double length
-    desired_video_duration = appconfig.actions.video[0].processing.video_duration
-    out_dur = video_duration(video_item.unprocessed)
+    desired_video_duration = float(appconfig.actions.video[0].processing.video_duration)
+    out_dur = video_duration(video_item.processed)
+    logger.info(f"{round(out_dur, 1)}")
+
     if appconfig.actions.video[0].processing.boomerang:
-        desired_video_duration *= 2
+        desired_video_duration *= 2.0
         desired_video_duration /= appconfig.actions.video[0].processing.boomerang_speed
 
     # ensure written video is about in tolerance duration
@@ -176,7 +178,7 @@ def test_video_stop_early(_container: Container):
     number_of_images_before = _container.mediacollection_service.count()
 
     # recording active, wait 1 secs before stopping.
-    desired_video_duration = 1
+    desired_video_duration = 1.0
     time.sleep(desired_video_duration)
     _container.processing_service.continue_process()
     _container.processing_service.wait_until_job_finished()
@@ -186,15 +188,15 @@ def test_video_stop_early(_container: Container):
     assert _container.mediacollection_service.count() == number_of_images_before + 1
 
     video_item = _container.mediacollection_service.get_item_latest()
-    assert video_item.unprocessed.suffix.lower() == ".mp4"
+    assert video_item.processed.suffix.lower() == ".mp4"
 
     # ensure written video is about in tolerance duration
-    video_duration_seconds = abs(round(video_duration(video_item.unprocessed), 1))
-    logger.info(f"{video_duration_seconds=}")
+    video_duration_seconds = video_duration(video_item.processed)
+    logger.info(f"{round(video_duration_seconds, 1)}")
 
     # boomerang reverses video so double length
     if appconfig.actions.video[0].processing.boomerang:
-        desired_video_duration *= 2
+        desired_video_duration *= 2.0
         desired_video_duration /= appconfig.actions.video[0].processing.boomerang_speed
     assert video_duration_seconds == pytest.approx(desired_video_duration, abs=0.5)
 
@@ -214,12 +216,12 @@ def test_multicamera(_container: Container):
     assert _container.mediacollection_service.count() == number_of_images_before + 5
 
     phase2_item = _container.mediacollection_service.get_item_latest()
-    assert phase2_item.unprocessed.suffix.lower() == f".{fileformat_should}"
+    assert phase2_item.processed.suffix.lower() == f".{fileformat_should}"
 
     # ensure written video is about in tolerance duration
     if fileformat_should == "mp4":
-        video_duration_seconds = abs(round(video_duration(phase2_item.unprocessed), 1))
+        video_duration_seconds = abs(round(video_duration(phase2_item.processed), 1))
         assert video_duration_seconds > 0.1
     else:
-        with Image.open(phase2_item.unprocessed, formats=["GIF", "AVIF", "WEBP"]) as img:
+        with Image.open(phase2_item.processed, formats=["GIF", "AVIF", "WEBP"]) as img:
             img.verify()

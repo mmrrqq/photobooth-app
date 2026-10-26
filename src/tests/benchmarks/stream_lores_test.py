@@ -1,6 +1,7 @@
 import io
 import logging
 
+import av.codec.context
 import cv2
 import numpy
 import pytest
@@ -22,7 +23,7 @@ def pyav_scale_simplejpeg_encode():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
         # lores stream width/height
         rW = input_stream.width // 2
@@ -48,7 +49,7 @@ def pyav_scale_cv2_encode():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
 
         # lores stream width/height
@@ -71,7 +72,7 @@ def pyav_turbojpeg_scale():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
         # lores stream width/height
 
@@ -89,7 +90,7 @@ def pyav_simplejpeg_scale():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
         # lores stream width/height
 
@@ -112,7 +113,7 @@ def pyav_pillow_scale():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
 
         # lores stream width/height
@@ -135,7 +136,7 @@ def pyav_cv2_scale():
     with input_device:
         input_stream = input_device.streams.video[0]
         # shall speed up processing, ... lets keep an eye on this one...
-        input_stream.thread_type = "AUTO"
+        input_stream.thread_type = av.codec.context.ThreadType.AUTO
         input_stream.thread_count = 0
 
         for packet in input_device.demux():  # forever

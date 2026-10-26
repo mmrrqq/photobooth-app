@@ -109,6 +109,9 @@ async def test_websocket_stream_stall_if_no_ready_from_client(mock_gen_stream, c
     with client.websocket_connect("ws://test/api/aquisition/stream") as websocket:
         # if there is no "ready" sent from client, it will not deliver a frame and receivebytes should timeout
 
+        # first is sent, second will timeout because we did not send the ready signal.
+        await asyncio.wait_for(asyncio.to_thread(websocket.receive_bytes), timeout=2)
+
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(asyncio.to_thread(websocket.receive_bytes), timeout=2)
 
@@ -132,7 +135,7 @@ def test_websocket_stream(mock_gen_stream, client: TestClient):
 
 def test_stream_exception_disabled(client: TestClient):
     # disable livestream
-    appconfig.backends.enable_livestream = False
+    appconfig.cameras.enable_livestream = False
 
     # shall result in error 405
     response = client.get("/aquisition/stream.mjpg")

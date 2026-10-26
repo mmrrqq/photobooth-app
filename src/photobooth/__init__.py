@@ -13,7 +13,7 @@ CACHE_PATH = "./cache/"
 # media collection files
 MEDIA_PATH = "./media/"
 PATH_CAMERA_ORIGINAL = "".join([MEDIA_PATH, "camera_original/"])
-PATH_UNPROCESSED = "".join([MEDIA_PATH, "unprocessed_original/"])
+PATH_UNPROCESSED = "".join([MEDIA_PATH, "unprocessed_original/"])  # remove later, when clear_all doesnt handle it in later v9 release
 PATH_PROCESSED = "".join([MEDIA_PATH, "processed_full/"])
 # folder not touched, used by user
 USERDATA_PATH = "./userdata/"
@@ -32,7 +32,6 @@ def _create_basic_folders():
     os.makedirs(CACHE_PATH, exist_ok=True)
     os.makedirs(MEDIA_PATH, exist_ok=True)
     os.makedirs(PATH_CAMERA_ORIGINAL, exist_ok=True)
-    os.makedirs(PATH_UNPROCESSED, exist_ok=True)
     os.makedirs(PATH_PROCESSED, exist_ok=True)
     os.makedirs(USERDATA_PATH, exist_ok=True)
     os.makedirs(LOG_PATH, exist_ok=True)

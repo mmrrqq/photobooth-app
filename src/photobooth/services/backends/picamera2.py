@@ -1,8 +1,3 @@
-"""
-Picamera2 backend implementation
-
-"""
-
 import io
 import logging
 import uuid
@@ -22,7 +17,7 @@ from ...utils.helper import filename_str_time
 from ..config.groups.cameras import GroupCameraPicamera2
 from .abstractbackend import AbstractBackend, BackendStats, StillRequest
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app_picamera2")
 
 
 class PicamLoresData(io.BufferedIOBase):
@@ -176,6 +171,9 @@ class Picamera2Backend(AbstractBackend):
         else:
             logger.info("no picamera2 video encoder active that could be stopped")
 
+    def _handle_switchmode_init(self):
+        pass
+
     def _handle_switchmode_video_mode(self):
         logger.debug("change to preview mode requested")
         self._switch_mode(self._video_configuration)
@@ -200,8 +198,7 @@ class Picamera2Backend(AbstractBackend):
                 # if this happens, backend signals error and shall be restarted.
                 self._picamera2.switch_mode(config)
             except Exception as exc:
-                logger.exception(exc)
-                logger.critical(f"error switching mode in picamera due to {exc}")
+                logger.critical(f"error switching mode in picamera due to {exc}", exc_info=exc)
                 raise exc
             else:
                 self._picamera2.start_encoder(
@@ -334,20 +331,21 @@ class Picamera2Backend(AbstractBackend):
                     logger.warning("force switchmode to capture config right before taking picture")
                     # ensure cam is in capture quality mode even if there was no countdown
                     # triggered beforehand usually there is a countdown, but this is to be safe
-                    self._mode_machine.process_switchmode("still")
+                    with self._mode_machine.ext_mode_switch_lock:
+                        self._mode_machine.process_switchmode("still")
 
-                    # capture hq picture
-                    filepath = Path(
-                        NamedTemporaryFile(
-                            mode="wb",
-                            delete=False,
-                            dir="tmp",
-                            prefix=f"{filename_str_time()}_picamera2_",
-                            suffix=".jpg",
-                        ).name
-                    )
-                    # https://github.com/raspberrypi/picamera2/issues/1125#issuecomment-2387829290 fixed now, so use simple capture_file again
-                    _ = self._picamera2.capture_file(filepath, wait=1.5)  # type: ignore
+                        # capture hq picture
+                        filepath = Path(
+                            NamedTemporaryFile(
+                                mode="wb",
+                                delete=False,
+                                dir="tmp",
+                                prefix=f"{filename_str_time()}_picamera2_",
+                                suffix=".jpg",
+                            ).name
+                        )
+                        # https://github.com/raspberrypi/picamera2/issues/1125#issuecomment-2387829290 fixed now, so use simple capture_file again
+                        _ = self._picamera2.capture_file(filepath, wait=1.5)  # type: ignore
 
                     with req.condition:
                         req.result_file = filepath

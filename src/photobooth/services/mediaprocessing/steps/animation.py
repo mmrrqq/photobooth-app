@@ -18,7 +18,7 @@ class AlignSizesStep(PipelineStep):
         sequenced_images: list[Image.Image] = []
 
         for _image in context.images:
-            sequenced_images.append(ImageOps.fit(_image, self.canvas_size, method=Image.Resampling.LANCZOS))  # or contain?
+            sequenced_images.append(ImageOps.fit(_image, self.canvas_size, method=Image.Resampling.BICUBIC))  # or contain?
 
         # update all after finished and unset var to help garbage collection
         context.images = sequenced_images

@@ -4,11 +4,11 @@ from uuid import uuid4
 
 import pytest
 
-from photobooth.plugins.synchronizer_rclone.config import RemoteConfig, ShareConfig, SynchronizerConfig
-from photobooth.plugins.synchronizer_rclone.immediate_synchronizer import ThreadedImmediateSyncPipeline
-from photobooth.plugins.synchronizer_rclone.regular_synchronizer import ThreadedRegularSync
-from photobooth.plugins.synchronizer_rclone.synchronizer_rclone import SynchronizerRclone
-from photobooth.plugins.synchronizer_rclone.types import DeleteOperation, TaskDelete
+from photobooth.plugins.synchronizer.config import RemoteConfig, ShareConfig, SynchronizerConfig
+from photobooth.plugins.synchronizer.immediate_synchronizer import ThreadedImmediateSyncPipeline
+from photobooth.plugins.synchronizer.regular_synchronizer import ThreadedRegularSync
+from photobooth.plugins.synchronizer.synchronizer import Synchronizer
+from photobooth.plugins.synchronizer.types import DeleteOperation, TaskDelete
 
 
 @pytest.fixture(scope="function")
@@ -16,8 +16,8 @@ def sync():
     """Create a SynchronizerRclone with mocked config + mocked rclone client."""
 
     with (
-        patch("photobooth.plugins.synchronizer_rclone.synchronizer_rclone.RcloneApi") as mock_rclone_ctor,
-        patch("photobooth.plugins.synchronizer_rclone.synchronizer_rclone.ThreadedImmediateSyncPipeline") as mock_pipeline_ctor,
+        patch("photobooth.plugins.synchronizer.synchronizer.RcloneApi") as mock_rclone_ctor,
+        patch("photobooth.plugins.synchronizer.synchronizer.ThreadedImmediateSyncPipeline") as mock_pipeline_ctor,
     ):
         mock_client = MagicMock()
         mock_pipeline = MagicMock()
@@ -25,7 +25,7 @@ def sync():
         mock_rclone_ctor.return_value = mock_client
         mock_pipeline_ctor.return_value = mock_pipeline
 
-        s = SynchronizerRclone()
+        s = Synchronizer()
 
         cfg = SynchronizerConfig()
         cfg.common.enabled = True
@@ -59,7 +59,7 @@ def sync():
 
 
 def test_service_real():
-    sr = SynchronizerRclone()
+    sr = Synchronizer()
 
     cfg = SynchronizerConfig()
     cfg.common.enabled = True
@@ -77,7 +77,7 @@ def test_service_real():
 # ---------------------------------------------------------------------------
 
 
-def test_get_share_links_public(sync: SynchronizerRclone):
+def test_get_share_links_public(sync: Synchronizer):
 
     sync._rclone_client.publiclink.return_value.link = "https://remote/link"  # type: ignore
 
@@ -98,7 +98,7 @@ def test_get_share_links_public_failure(sync):
 # ---------------------------------------------------------------------------
 
 
-def test_get_stats_ok(sync: SynchronizerRclone):
+def test_get_stats_ok(sync: Synchronizer):
     mock_client = sync._rclone_client
 
     mock_client.core_stats.return_value = MagicMock(  # type: ignore
@@ -121,7 +121,7 @@ def test_get_stats_ok(sync: SynchronizerRclone):
     assert stats.name == "Synchronizer"
 
 
-def test_get_stats_error(sync: SynchronizerRclone):
+def test_get_stats_error(sync: Synchronizer):
     sync._rclone_client.core_stats.side_effect = Exception("fail")  # type: ignore
 
     stats = sync.get_stats()
@@ -133,9 +133,9 @@ def test_get_stats_error(sync: SynchronizerRclone):
 # ---------------------------------------------------------------------------
 # _copy_sharepage_to_remotes()
 # ---------------------------------------------------------------------------
-def test_copy_sharepage_to_remotes(sync: SynchronizerRclone):
+def test_copy_sharepage_to_remotes(sync: Synchronizer):
     # Patch resources.files("web").joinpath("sharepage/index.html")
-    with patch("photobooth.plugins.synchronizer_rclone.synchronizer_rclone.resources.files") as mock_files:
+    with patch("photobooth.plugins.synchronizer.synchronizer.resources.files") as mock_files:
         # Make joinpath return a real file path (this test file)
         mock_files.return_value.joinpath.return_value = Path(__file__)
         r = sync._config.remotes[0]
@@ -149,7 +149,7 @@ def test_copy_sharepage_to_remotes(sync: SynchronizerRclone):
 # ---------------------------------------------------------------------------
 
 
-def test_collection_hooks(sync: SynchronizerRclone):
+def test_collection_hooks(sync: Synchronizer):
     with patch.object(sync._immediate_pipeline, "submit") as mock_put:
         f = Path("media/test.jpg")
 

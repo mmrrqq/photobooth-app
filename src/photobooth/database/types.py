@@ -1,33 +1,19 @@
-import enum
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import String, TypeDecorator
 
+MediaitemTypes = Literal["image", "collage", "animation", "video", "multicamera"]
+# SQLalchemy persists the name, fastapi validates against the value.
+# Ref: https://github.com/fastapi/fastapi/discussions/11098
+# was strEnum before but using literal type is 1:1 transparent in db use and simplifies usage in the config/jsonforms renderer
+# image:        captured single image that is NOT part of a collage (normal process)
+# collage:      canvas image that was made out of several collage_image
+# animation:    canvas image that was made out of several animation_image
+# video:        captured video - h264, mp4 is currently well supported in browsers it seems
+# multicamera:  video - h264, mp4, result of multicamera image, example the wigglegram
 
-class MediaitemTypes(enum.StrEnum):
-    """
-    SQLalchemy persists the name, fastapi validates against the value.
-    We just set name==value so it works in both worlds without any conversion.
-    Ref: https://github.com/fastapi/fastapi/discussions/11098
-    """
-
-    image = "image"  # captured single image that is NOT part of a collage (normal process)
-    collage = "collage"  # canvas image that was made out of several collage_image
-    animation = "animation"  # canvas image that was made out of several animation_image
-    video = "video"  # captured video - h264, mp4 is currently well supported in browsers it seems
-    multicamera = "multicamera"  #  video - h264, mp4, result of multicamera image, example the wigglegram
-
-
-class DimensionTypes(enum.StrEnum):
-    """
-    SQLalchemy persists the name, fastapi validates against the value.
-    We just set name==value so it works in both worlds without any conversion.
-    Ref: https://github.com/fastapi/fastapi/discussions/11098
-    """
-
-    full = "full"
-    preview = "preview"
-    thumbnail = "thumbnail"
+DimensionTypes = Literal["full", "preview", "thumbnail"]
 
 
 class PathType(TypeDecorator):

@@ -10,7 +10,7 @@ from PIL import Image
 
 from photobooth.container import container
 from photobooth.services.processing import ProcessingService
-from photobooth.services.processor.base import Capture
+from photobooth.services.processor.models import Capture
 
 from ...util import get_jpeg
 

@@ -18,7 +18,7 @@ class BaseModelCamera(BaseModel):
     )
 
     camera_standby_when_inactive: bool = Field(
-        default=False,
+        default=True,
         description="When enabled, the app tries to disable the cameras livestream when no livestream is requested. It helps to avoid sensor overheating for older cameras by setting viewfinder=0.",
     )
     camera_standby_when_inactive_time: int = Field(
@@ -160,29 +160,28 @@ class GroupCameraGphoto2(BaseModelCamera):
     model_config = ConfigDict(title="Gphoto2")
     backend_type: Literal["Gphoto2"] = "Gphoto2"
 
-    gcapture_target: str = Field(
-        default="",
-        description="Set capture target (examples: 'Internal RAM', 'Memory card'). To keep images, capture to a disk target. Empty means default of camera (mostly RAM).",
+    parameterset_device_init: list[Gphoto2Parameters] = Field(
+        default=[
+            Gphoto2Parameters(name="capturetarget", value="", enabled=False),
+            Gphoto2Parameters(name="shutterspeed", value="1/50", enabled=False),
+            Gphoto2Parameters(name="iso", value="Auto"),
+        ],
     )
-
     parameterset_standby: list[Gphoto2Parameters] = Field(
         default=[
             Gphoto2Parameters(name="viewfinder", value="0"),
-            Gphoto2Parameters(name="eosmoviemode", value="0"),
         ],
     )
 
     parameterset_video: list[Gphoto2Parameters] = Field(
         default=[
-            Gphoto2Parameters(name="iso", value="Auto"),
-            Gphoto2Parameters(name="eosmoviemode", value="1"),
+            Gphoto2Parameters(name="viewfinder", value="1"),
         ],
     )
 
     parameterset_still: list[Gphoto2Parameters] = Field(
         default=[
             Gphoto2Parameters(name="viewfinder", value="0", note="allows camera to autofocus fast in native mode not contrast mode"),
-            Gphoto2Parameters(name="eosmoviemode", value="0"),
         ],
     )
 
@@ -203,18 +202,18 @@ class GroupCameraPyav(BaseModelCamera):
         json_schema_extra={"list_api": "/api/admin/enumerate/usbcameras"},
     )
 
-    pixel_format: BackendPyavInputFormat = Field(
+    pixel_format: BackendPyavInputFormat = Field(  # pyright: ignore[reportInvalidTypeForm]
         default="auto",
         description="mjpeg is preferred usually. Some cameras (especially virtual cameras) or systems (Mac) do not support MJPG, so you can fall back to uncompressed rawvideo types here.",
         json_schema_extra={"computeIntense": True},
     )
 
     cam_resolution_width: int = Field(
-        default=3840,
+        default=1920,
         description="camera resolution width to capture high resolution photo",
     )
     cam_resolution_height: int = Field(
-        default=2160,
+        default=1080,
         description="camera resolution height to capture high resolution photo",
     )
     cam_framerate: int = Field(
@@ -267,11 +266,11 @@ class GroupCameraV4l2(BaseModelCamera):
         description="Enable to close camera, switch to higher resolution and grab one frame with below configuration. Resolution used for stills.",
     )
     HIRES_CAM_RESOLUTION_WIDTH: int = Field(
-        default=4192,
+        default=1920,
         description="camera resolution width to capture high resolution photo",
     )
     HIRES_CAM_RESOLUTION_HEIGHT: int = Field(
-        default=3104,
+        default=1080,
         description="camera resolution height to capture high resolution photo",
     )
     flush_number_frames_after_switch: int = Field(
@@ -383,7 +382,7 @@ class GroupBackend(BaseModel):
 
     description: str = Field(default="backend default name")
 
-    backend_config: BackendsPlatform = Field(discriminator="backend_type")
+    backend_config: BackendsPlatform = Field(discriminator="backend_type")  # pyright: ignore[reportInvalidTypeForm]
 
 
 class GroupCameras(BaseModel):

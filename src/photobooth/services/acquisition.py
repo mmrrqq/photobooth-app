@@ -31,7 +31,7 @@ class AcquisitionService(BaseService):
         self._backends = []
 
         # get backend obj and instanciate
-        for cfg in appconfig.backends.group_backends:
+        for cfg in appconfig.cameras.group_backends:
             if cfg.enabled:
                 backend: AbstractBackend = self._import_backend(cfg.backend_config.backend_type)(cfg.backend_config)
 
@@ -48,7 +48,7 @@ class AcquisitionService(BaseService):
         self._multicam_backend = self._get_backend("index_backend_multicam")
 
         # it's not a copy, it's a ref we hold.
-        assert self._stills_backend is self._backends[appconfig.backends.index_backend_stills]
+        assert self._stills_backend is self._backends[appconfig.cameras.index_backend_stills]
 
         logger.info(f"loaded backends: {[f'{index}:{name}' for index, name in enumerate(self._backends)]}")
 
@@ -72,7 +72,7 @@ class AcquisitionService(BaseService):
         super().stopped()
 
     def _get_backend(self, index_type: Literal["index_backend_stills", "index_backend_video", "index_backend_multicam"]) -> AbstractBackend:
-        index = getattr(appconfig.backends, index_type)
+        index = getattr(appconfig.cameras, index_type)
 
         try:
             return self._backends[index]
@@ -109,7 +109,7 @@ class AcquisitionService(BaseService):
         pluggy_pm.hook.acq_thrill()
         pluggy_pm.hook.acq_thrill_multicam()
 
-    def wait_for_lores_image(self, index_device: int | None = 0, index_subdevice: int = 0):
+    def wait_for_lores_image(self, index_device: int | None = None, index_subdevice: int = 0):
 
         if not self.is_running():
             raise BackendNotRunning
@@ -126,13 +126,12 @@ class AcquisitionService(BaseService):
         try:
             return backend.wait_for_still_file(index_subdevice=index_subdevice)
         except Exception as exc:
-            # self._stills_backend.recover()  # TODO: verify
             raise exc
         finally:
             # ensure even if failed, the wled is set to standby again
             pluggy_pm.hook.acq_after_shot()
 
-    def wait_for_multicam_files(self, index_device: int | None = 0):
+    def wait_for_multicam_files(self, index_device: int | None = None):
         backend = self._multicam_backend if index_device is None else self._backends[index_device]
 
         pluggy_pm.hook.acq_before_shot()
@@ -141,7 +140,6 @@ class AcquisitionService(BaseService):
         try:
             return backend.wait_for_multicam_files()
         except Exception as exc:
-            # self._multicam_backend.recover()  # TODO: verify.
             raise exc
         finally:
             # ensure even if failed, the wled is set to standby again
