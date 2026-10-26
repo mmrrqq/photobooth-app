@@ -44,7 +44,7 @@ class StillRequest:
     id: uuid.UUID
     subdevice_index: int
     result_file: Path | None = None
-    # error: Exception | None = None
+    error: Exception | None = None
     condition: threading.Condition = threading.Condition()
 
 
@@ -356,6 +356,9 @@ class AbstractBackend(ResilientService, ABC):
 
             if not ok:
                 raise TimeoutError("timeout waiting for hires frame")
+
+            if req.error:
+                raise req.error
 
             filepath = req.result_file
             assert filepath

@@ -286,6 +286,17 @@ class Gphoto2Backend(AbstractBackend):
                             with req.condition:
                                 req.error = exc
                                 req.condition.notify_all()
+
+                            if isinstance(exc, gp.GPhoto2Error):
+                                # communication with the camera failed (e.g. -52 camera vanished from USB). the camera
+                                # object is unusable now, so leave the worker loop and let the supervisor reconnect.
+                                try:
+                                    self._camera.exit()
+                                except Exception:
+                                    pass  # fail in silence, because things got already wrong. this one is just to try to cleanup
+
+                                raise RuntimeError(f"Error communicating with the camera: {exc}") from exc
+
                             continue
 
                     with req.condition:
