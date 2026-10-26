@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,8 @@ DPI = 203
 TO_INCH = 1 / 25.4
 LABEL_WIDTH = 80  # mm
 FONT_PATH = Path(__file__).parent.parent.parent.parent / "userdata" / "nerdfontmono-reg.ttf"
+PRE_LABEL_PATH = Path(__file__).parent / "receipt_template.png"
+DATE_FORMAT = "%d.%m.%Y"  # printed as pre_label if no template image is found at PRE_LABEL_PATH
 NAMES_HEADER = "Rechnung:"  # editable; matches the German template wording
 TOTAL_LABEL = "Summe:"
 
@@ -42,6 +45,24 @@ def _split_arg(index: int) -> list[str]:
     return [v.strip() for v in sys.argv[index].split(",")] if len(sys.argv) > index else []
 
 
+def _build_pre_label(target_width: int) -> tuple[bytes, int]:
+    pre_label: LabelImage | None = LabelImage.from_path(PRE_LABEL_PATH)
+
+    if pre_label is not None:
+        pre_label_height = pre_label._scale(target_width=target_width)
+        assert pre_label_height is not None
+    else:
+        # no template available, print the current date instead. it's rendered at target_width already, no scaling needed
+        pre_label = LabelImage.from_text_lines([datetime.now().strftime(DATE_FORMAT)], width=target_width, font_path=FONT_PATH)
+        pre_label_height = pre_label.image.size[1]
+
+    pre_label._convert_grayscale()
+    pre_label_data = pre_label.get_binary_data()
+    assert pre_label_data is not None
+
+    return pre_label_data, pre_label_height
+
+
 def main():
     path = Path(sys.argv[1])
     # argv[2..4] are comma-separated, index-aligned {face_names}/{face_emotions}/{face_emotion_scores}
@@ -49,16 +70,11 @@ def main():
     emotions = _split_arg(3)
     scores = _split_arg(4)
     label: LabelImage = LabelImage.from_path(path)
-    pre_label: LabelImage = LabelImage.from_path(Path(__file__).parent / "receipt_template.png")
 
     target_width = int(np.floor(LABEL_WIDTH * TO_INCH * DPI))
     target_width -= target_width % 8
 
-    pre_label_height = pre_label._scale(target_width=target_width)
-    assert pre_label_height is not None
-    pre_label._convert_grayscale()
-    pre_label_data = pre_label.get_binary_data()
-    assert pre_label_data is not None
+    pre_label_data, pre_label_height = _build_pre_label(target_width)
 
     target_height = label._scale(target_width=target_width)
     assert target_height is not None
